@@ -58,6 +58,10 @@ Claude Code reads `~/.claude/settings.json` env — if it carries the paid base 
 
 ---
 
+## The paid sibling (cheap, not free)
+
+The free lane's deep-reasoning partner is just DeepSeek's official API: sign up at api.deepseek.com, put the key in a settings file ( + the key), and set  for the architecture builds. Nothing novel to teach — it's the documented path — but it's the door the free lane hands the hard problems to. Free for the grind, a few cents for the genius.
+
 ## The honest reality of "free"
 
 - **Speed:** the NIM free tier is 40 req/min with queues — expect 20-60s answers. It feels half-speed. That's the price of $0.

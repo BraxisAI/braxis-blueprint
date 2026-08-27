@@ -1,0 +1,20 @@
+{
+  "name": "Your Name",
+  "location": "City, State (or Remote)",
+  "summary": "One paragraph: what you do, years, key strengths.",
+  "skills": ["python", "automation", "project management", "remote collaboration"],
+  "experience": [
+    {
+      "title": "Role Title",
+      "company": "Company",
+      "years": "2020-2025",
+      "details": ["bullet one", "bullet two"]
+    }
+  ],
+  "education": "Degree / school",
+  "preferences": {
+    "remote_only": true,
+    "categories": ["ai_remote", "property_manager"],
+    "regions": ["Vermont", "Southeast US"]
+  }
+}

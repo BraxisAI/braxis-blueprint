@@ -6,6 +6,8 @@ This repo is the honest, unpolished blueprint: the actual scripts that run the e
 
 > I'm not selling you a course. I'm handing you the scripts. Everything here ran in production today.
 
+> **Want this run for your business instead of built by you?** A $25 same-day *opportunity brief*: three overlooked revenue openings for your shop, ranked by effort vs payoff, with a 7-day plan. **[Get yours →](https://buy.stripe.com/aFafZhgVaeSqa0G34F7ES1V)**
+
 ## The Empire in Numbers
 - **140+ autonomous agents** — a CEO/chief-of-staff decision duo + a city of persistent citizens with memory, reflection, and a self-improvement loop
 - **20+ free LLM lanes** — a router that falls through providers (cooldowns, dead-model tracking, self-optimizing) without spending a dollar

@@ -902,9 +902,37 @@ def choose(state):
     return best or 'watch fountain'
 
 
+def _obstacle_radius(build):
+    return 3.2 if build.get('glb_url') else 1.7
+
+
+def _blocked(x, z, builds):
+    for b in builds:
+        r = _obstacle_radius(b)
+        if math.hypot(x - float(b.get('x') or 0),
+                      z - float(b.get('z') or 0)) < r:
+            return True
+    return False
+
+
 def _walk_to(state, place):
     p = LOCS[place]
-    state['target'] = {'x': float(p['x']), 'z': float(p['z'])}
+    tx, tz = float(p['x']), float(p['z'])
+    builds = load_builds()
+    if _blocked(tx, tz, builds):
+        found = False
+        for ring in (2.8, 4.2, 5.8, 7.5, 9.5):
+            for k in range(12):
+                a = k * math.pi / 6
+                cx = tx + math.cos(a) * ring
+                cz = tz + math.sin(a) * ring
+                if not _blocked(cx, cz, builds):
+                    tx, tz = cx, cz
+                    found = True
+                    break
+            if found:
+                break
+    state['target'] = {'x': round(tx, 2), 'z': round(tz, 2)}
     state['moving'] = True
     state['action'] = 'walking to %s' % p['label']
     lines = [
@@ -3095,8 +3123,19 @@ def tick(state):
                 pending = choose(state)
             _start_action(state, pending, _action_place(state, pending))
         else:
-            state['pos'] = {'x': round(px + dx / dist * step, 3),
-                            'z': round(pz + dz / dist * step, 3)}
+            nx = px + dx / dist * step
+            nz = pz + dz / dist * step
+            # A simple repulsion loop: step around the hero and the builds
+            # instead of walking through them.
+            for b in load_builds():
+                bx = float(b.get('x') or 0)
+                bz = float(b.get('z') or 0)
+                r = _obstacle_radius(b)
+                dd = math.hypot(nx - bx, nz - bz)
+                if 0.001 < dd < r:
+                    nx = bx + (nx - bx) / dd * r
+                    nz = bz + (nz - bz) / dd * r
+            state['pos'] = {'x': round(nx, 3), 'z': round(nz, 3)}
         state['mood'] = _mood(state)
         return state
 

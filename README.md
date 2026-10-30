@@ -17,13 +17,13 @@ These are counted, not estimated. Where a number went backwards, it says so.
 - **2,100+ songs, 5 video styles, daily content across 8 platforms** — one pipeline, zero budget
 - **Cold email: 45/day at its peak, then it fell to 1/day and I stopped the lane.** The mechanism is still in here and still documented; the volume is not what it was. I would rather show you the curve than a number I can no longer back up
 - **11 live Stripe products** with automated fulfillment
-- **A 3D world** (braxisai.com/world) where the mayor is an LLM agent and the citizens self-modify
+- **A 3D world** (braxisai.com/world) with one resident, **KIT**, who chooses projects, builds a persistent city, keeps a diary and dreams, and shares its work
 - **3 verified backup copies** of everything, nightly
 
 ## Live Demos
 - The living system map: https://braxisai.com/map — the whole estate, live
 - The world: https://braxisai.com/world/
-- The talking mayor: https://braxisai.com/avatar/
+- The talking avatar: https://braxisai.com/avatar/
 - The music machine: https://braxisai.com/music/
 - The resume the machine built for its founder: https://braxisai.com/resume/
 
@@ -38,6 +38,16 @@ These are counted, not estimated. Where a number went backwards, it says so.
 | `job_watcher.py` | The job-hunt machine: scan free boards → LLM-score each posting against a resume → desk. **Run it:** [docs/job-hunt-machine.md](docs/job-hunt-machine.md) — fork, drop your resume into `data/job/resume.json` (template included), run it |
 | `vesper_avatar_say.py` | A talking 3D avatar with word-timed lip-sync, zero API keys (edge-tts `boundary="WordBoundary"` gotcha included) |
 | `resume_build.py` | The living-map-as-resume pattern: the empire's own state becomes a job application |
+| `kit/KIT.md` | KIT: one resident in a 3D world — what is autonomous, what is authored, and what is next |
+| `kit/world_life.py` | The resident's brain: drives, self-chosen projects, persistent builds, creations, browse/watch, HTTP API |
+| `kit/kit_watcher.py` | The dreamkeeper: reads journals/dreams, gifts a blueprint when a dream matches, never commands |
+| `kit/world_share.py` | Playwright capture of a build + the determiner's measured platform routing |
+
+## KIT — one resident, not a chatbot
+
+KIT lives at **braxisai.com/world/**: a humanoid garden-robot with a 2-second deterministic life loop, five drives, self-chosen projects, persistent builds, a dojo of blueprints, a `make` layer (medium × subject), browse/watch, a diary, and **one free-model call per day** for reflection/desire/dream/wonder/subject/world name. It named its world **Hollowscape**. A watcher/dreamkeeper reads its journal and dreams and can leave a blueprint as a gift; it never commands.
+
+The honest part, which most agent demos skip: KIT still chooses from an authored action/project list. Its choice, timing, refusal, desires, subjects, and world name are its own; inventing new *kinds* of projects is the next layer. `kit/KIT.md` lays out exactly what is authored, what is self-generated, and which old free-will modules were kept or skipped.
 
 ## Architecture (the 30-second version)
 ```
@@ -64,7 +74,7 @@ usually worse than you think and better than it looks.
 4. **The clock lies** — a sender compared local time against UTC windows and silently muted itself. UTC everywhere.
 5. **Free tiers churn** — providers retire models without notice (SambaNova's "free" became a paywall overnight; Groq retired llama-70b). The optimizer suspends/demotes automatically. Verify endpoints with real probes, always.
 6. **The VM IP is a ghost town** — Reddit, LinkedIn, WWR all 403 datacenter IPs. Residential-IP browser lanes are the answer for anything social.
-7. **City-building is the seduction** — the mayor wanted to build districts; the founder banned city work until the first sale. Money first, world second.
+7. **City-building is the seduction** — the agents wanted to build districts; the founder banned city work until the first sale. Money first, world second.
 8. **A lane that fails 100% of the time has an unencoded platform rule, not a bug.** A whole posting lane died for days because nothing checked Bluesky's 300-character limit — the gate checked caps, dedup and spacing, and never length. Correlation was total: 51 of 51 failures were over the limit, 0 of 5 successes were.
 9. **A file change is not a deployment.** Fixes sat inert for hours because nobody restarted the process that ran the old code. Twice in one week.
 

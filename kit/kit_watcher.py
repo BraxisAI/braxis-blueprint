@@ -21,6 +21,7 @@ import json
 import os
 import random
 import re
+import urllib.request
 
 B = '/home/ubuntu/braxis-2.0'
 STATE = os.path.join(B, 'data', 'world', 'world_life.json')
@@ -29,6 +30,58 @@ REPLY = os.path.join(B, 'data', 'world', 'trio_replies.jsonl')
 REPORT = os.path.join(B, 'data', 'world', 'kit_watcher.json')
 WJOURNAL = os.path.join(B, 'data', 'world', 'kit_watcher_journal.md')
 BUILDS = os.path.join(B, 'data', 'world', 'world_builds.json')
+INPUTS = os.path.join(B, 'data', 'world', 'world_inputs.json')
+
+
+def _world_inputs():
+    """Free, keyless external factors: Vermont weather + BTC 24h move."""
+    weather, temp, btc = '', None, 0.0
+    try:
+        url = ('https://api.open-meteo.com/v1/forecast?latitude=43.16'
+               '&longitude=-72.87&current=temperature_2m,weather_code')
+        req = urllib.request.Request(url, headers={'User-Agent': 'BraxisKit/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            cur = json.load(r).get('current') or {}
+        code = int(cur.get('weather_code') or 0)
+        temp = cur.get('temperature_2m')
+        if code == 0:
+            weather = 'clear'
+        elif code in (1, 2, 3):
+            weather = 'partly cloudy'
+        elif code in (45, 48):
+            weather = 'fog'
+        elif 51 <= code <= 57:
+            weather = 'drizzle'
+        elif 61 <= code <= 67:
+            weather = 'rain'
+        elif 71 <= code <= 77:
+            weather = 'snow'
+        elif 80 <= code <= 82:
+            weather = 'showers'
+        elif 85 <= code <= 86:
+            weather = 'snow showers'
+        elif code >= 95:
+            weather = 'thunderstorm'
+        else:
+            weather = 'weather code %d' % code
+    except Exception as e:
+        weather = 'unknown (%s)' % str(e)[:40]
+    try:
+        url = ('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin'
+               '&vs_currencies=usd&include_24hr_change=true')
+        req = urllib.request.Request(url, headers={'User-Agent': 'BraxisKit/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            btc = float((json.load(r).get('bitcoin') or {}).get('usd_24h_change') or 0)
+    except Exception:
+        pass
+    data = {'ts': dt.datetime.now(dt.timezone.utc).isoformat(),
+            'weather': weather, 'temp': temp, 'btc_change': round(btc, 2)}
+    try:
+        with open(INPUTS, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=1)
+    except Exception:
+        pass
+    return data
 
 KINDS = ['garden_plot', 'trellis', 'bench', 'lantern', 'arch', 'mural',
          'tower', 'bridge', 'fountain', 'monument']
@@ -63,6 +116,7 @@ def _append(path, obj):
 
 def main():
     st = _load(STATE, {})
+    inputs = _world_inputs()
     builds = _load(BUILDS, [])
     if not isinstance(builds, list):
         builds = []
@@ -125,6 +179,7 @@ def main():
 
     report = {
         'ts': now,
+        'inputs': inputs,
         'recommendations': recs,
         'world_name': st.get('world_name'),
         'tagline': st.get('tagline'),

@@ -95,11 +95,15 @@ def queue(build, image_url, state):
     try:
         from shared.determiner import route
         for platform, ctype, why in route('image', weapon='kit_world', image_url=image_url):
+            if platform in ('x', 'twitter'):
+                continue  # X is parked; do not queue dead rows.
             rows.append((platform, ctype, bodies.get(platform, cap),
                          image_url if ctype == 'image' else None, why))
             plan.append({'platform': platform, 'kind': ctype, 'why': why})
         seen = {r[0] for r in rows}
         for platform, ctype, why in route('text', weapon='kit_world'):
+            if platform in ('x', 'twitter'):
+                continue  # X is parked; do not queue dead rows.
             if platform not in seen:
                 rows.append((platform, ctype, bodies.get(platform, cap), None, why))
                 plan.append({'platform': platform, 'kind': ctype, 'why': why})
@@ -109,7 +113,6 @@ def queue(build, image_url, state):
             ('facebook', 'image', bodies['facebook'], image_url, 'fallback'),
             ('instagram', 'image', bodies['instagram'], image_url, 'fallback'),
             ('linkedin', 'image', bodies['linkedin'], image_url, 'fallback'),
-            ('x', 'text', bodies['x'], None, 'fallback'),
         ]
         plan = [{'platform': p, 'kind': c, 'why': w} for p, c, _b, _i, w in rows]
     try:

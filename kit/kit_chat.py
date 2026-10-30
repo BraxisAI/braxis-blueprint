@@ -24,6 +24,7 @@ import urllib.request
 
 B = '/home/ubuntu/braxis-2.0'
 STATE = os.path.join(B, 'data', 'world', 'world_life.json')
+WISHLIST = os.path.join(B, 'data', 'world', 'kit_wishlist.json')
 OFFSET = os.path.join(B, 'data', 'world', 'kit_chat_offset.json')
 LIMIT = os.path.join(B, 'data', 'world', 'kit_chat_day.json')
 MAX_PER_DAY = 30
@@ -60,6 +61,14 @@ def _state():
         return {}
 
 
+def _load_json(path, default):
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
 def _clean(text):
     text = re.sub(r'\*\*|__|`', '', text or '')
     text = re.sub(r'^\s*(reply|answer|kit)\s*:\s*', '', text, flags=re.I)
@@ -83,6 +92,12 @@ def _reply(text, st):
         'dream': st.get('dream'), 'last_creation': st.get('last_creation'),
         'recent': (st.get('recent') or [])[:4],
         'weather': st.get('weather'), 'btc_change': st.get('btc_change'),
+        'self_model': st.get('self_model'),
+        'visitor_impressions': list(
+            (st.get('visitor_impressions') or {}).values())[-4:],
+        'wishes': (lambda wl: [w for w in (wl.get('wishes') or [])
+                               if w.get('status') != 'fulfilled'][:5])(
+            _load_json(WISHLIST, {})),
     }
     prompt = (
         'You are %s (%s), a small garden-robot who lives in %s. You chose your '

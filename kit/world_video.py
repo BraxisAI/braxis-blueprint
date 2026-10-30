@@ -47,7 +47,11 @@ def _state():
             return {}
 
 
+LAST_AUDIO = ''
+
+
 def capture():
+    global LAST_AUDIO
     from playwright.sync_api import sync_playwright
     os.makedirs(MEDIA, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix='worldvid-', dir=MEDIA)
@@ -71,9 +75,19 @@ def capture():
         return None
     ts = dt.datetime.now(dt.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     out = os.path.join(MEDIA, 'live_%s.mp4' % ts)
-    r = subprocess.run(['ffmpeg', '-y', '-i', src[0], '-vf', 'scale=1080:1920',
-                        '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-an', out],
-                       capture_output=True, text=True, timeout=180)
+    kits = sorted(glob.glob(os.path.join(
+        B, 'data', 'songs', 'Braxis_Songs', 'Kit', '*.mp3')), key=os.path.getmtime)
+    LAST_AUDIO = kits[-1] if kits else ''
+    cmd = ['ffmpeg', '-y', '-i', src[0]]
+    if LAST_AUDIO:
+        cmd += ['-i', LAST_AUDIO]
+    cmd += ['-vf', 'scale=1080:1920', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']
+    if LAST_AUDIO:
+        cmd += ['-c:a', 'aac', '-b:a', '192k', '-shortest']
+    else:
+        cmd += ['-an']
+    cmd += [out]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
     shutil.rmtree(tmp, ignore_errors=True)
     if r.returncode != 0 or not os.path.exists(out):
         print('ffmpeg failed:', r.stderr[-300:])
@@ -81,19 +95,23 @@ def capture():
     return out
 
 
-def queue(video_url, state):
+def queue(video_url, state, with_audio=False):
     from shared.determiner import route
     world = state.get('world_name') or 'the world'
     action = state.get('action') or 'living'
     thought = state.get('thought') or ''
     cap = ('A 15-second window into %s. KIT is %s. %s The world is live: %s'
            % (world, action, thought[:180], WORLD))
+    if with_audio:
+        cap += ' With KIT’s own song.'
     title = ('Live from %s' % world)[:110]
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
     rows = []
     plan = []
     for platform, ctype, why in route('video', weapon='kit_world',
                                       image_url=video_url):
+        if platform in ('x', 'twitter'):
+            continue  # X is parked; do not queue dead rows.
         rows.append((platform, ctype, why))
         plan.append({'platform': platform, 'kind': ctype, 'why': why})
     if not rows:
@@ -145,7 +163,7 @@ def main():
     except Exception as e:
         print('video not served:', e)
         return 1
-    ids = queue(url, _state())
+    ids = queue(url, _state(), with_audio=bool(LAST_AUDIO))
     try:
         json.dump({'last': time.time(), 'video': url}, open(SHARED, 'w', encoding='utf-8'))
     except Exception:

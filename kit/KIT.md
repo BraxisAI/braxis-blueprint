@@ -59,6 +59,9 @@ still missing.
 - **Real video:** `world_video.py` records a live window of the world and muxes
   KIT's own song with ffmpeg. First KIT music video:
   `https://braxisai.com/media/world/live_20261030T210754Z.mp4`.
+- **Hero GLB:** a free TRELLIS text→3D run produced `kit_hero.glb` (6.1 MB),
+  now loaded by GLTFLoader as **KIT, the Hero** on the center plinth:
+  `https://braxisai.com/media/world/hero/kit_hero.glb`.
 - **Gallery:** `/world/` has a gallery wall with the latest creations, real
   images, inline audio players, print links, and the latest-creation line.
 - **POD:** a KIT painting is a real Printify poster:
@@ -138,9 +141,9 @@ modules are in the private recovery archive.
 
 ## Limitations
 
-- The 3D world is still low-poly; the free TRELLIS text→3D lane returned 503
-  during the hero-build attempt. Procedural tree/lantern are live; a true hero
-  GLB is the next 3D step.
+- The first free TRELLIS hero GLB is live on the center plinth; more hero
+  subjects and arbitrary-build swapping are the next 3D step. Most builds are
+  still low-poly procedural geometry.
 - The action list is authored; KIT selects and composes, it does not yet author
   new mechanics.
 - The daily reflection is a single free-model call; quality varies.

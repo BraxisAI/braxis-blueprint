@@ -25,6 +25,7 @@ They are ported here as a small, deterministic loop, not an LLM per decision.
 """
 import datetime as dt
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 import json
 import math
 import os
@@ -49,6 +50,7 @@ REQUESTS = os.path.join(B, 'data', 'world', 'kit_asset_requests.jsonl')
 POSTS_LOG = os.path.join(B, 'data', 'world', 'kit_social_posts.jsonl')
 WORLD = 'https://braxisai.com/world/'
 SIGNALS = os.path.join(B, 'data', 'world', 'world_signals.jsonl')
+VISITS = os.path.join(B, 'data', 'world', 'world_visits.jsonl')
 SELF_MODEL_PATH = os.path.join(B, 'data', 'world', 'kit_self_model.json')
 WISHLIST_PATH = os.path.join(B, 'data', 'world', 'kit_wishlist.json')
 EXTERNAL_LOG = os.path.join(B, 'data', 'world', 'kit_external_events.jsonl')
@@ -276,6 +278,7 @@ PALETTE = {
 LOCK = threading.RLock()
 OFFERS = []
 OFFER_LAST = {}
+VISIT_QUEUE = []
 
 
 def _clamp(v, lo=0.0, hi=10.0):
@@ -405,8 +408,14 @@ def _default_state():
         'last_post_ts': 0.0,
         'posts': 0,
         'last_post': None,
+        'visits_total': 0,
+        'visit_seconds_total': 0.0,
+        'visit_seconds_n': 0,
+        'visit_ids': [],
+        'visit_returns': 0,
         'action_last': {},
         'mood_residue': {},
+        'place_prefs': {},
         'self_model': '',
         'visitor_impressions': {},
         'pending_ideas': [],
@@ -851,6 +860,10 @@ def choose(state):
         if name == last_action:
             repeat_penalty -= 1.0
         variety = 0.45 if name not in recent_actions[-10:] else 0.0
+        place_pref = float((state.get('place_prefs') or {}).get(place, 0.5))
+        place_bonus = (place_pref - 0.5) * 0.3
+        last_thought = str((state.get('thought_history') or [''])[-1]).lower()
+        thought_bonus = 0.12 if (name in last_thought or place in last_thought) else 0.0
         last_ts = float((state.get('action_last') or {}).get(name) or 0)
         age_bonus = 0.60 if (not last_ts or time.time() - last_ts > 24 * 3600) else 0.0
         hour = dt.datetime.now(dt.timezone.utc).hour
@@ -865,7 +878,7 @@ def choose(state):
                                          'watch fountain', 'compose', 'wonder') else 0.0
         s = (need + pref * 1.2 + novelty + project_bonus + curious_bonus
              + creative_bonus + cooldown + repeat_penalty + variety + age_bonus
-             + day_bonus + random.random() * 0.55)
+             + day_bonus + place_bonus + thought_bonus + random.random() * 0.55)
         if s > best_s:
             best, best_s = name, s
     # A small deliberate randomness keeps a day from collapsing into one
@@ -1061,6 +1074,10 @@ def _compose_next_project(state, slot=0):
     seed = ' '.join([subject, desire, str(last.get('title') or '')])
     order = ['tree', 'garden', 'bridge', 'tower', 'lantern', 'arch',
              'ring', 'bench', 'fountain', 'spire']
+    # competence bias: try the shapes the skill library has used least
+    uses = {str(x.get('shape')): int(x.get('uses') or 0)
+            for x in _load_skill_lib()}
+    order = sorted(order, key=lambda s: (uses.get(s, 0), random.random()))
     shape = _shape_for(
         seed, fallback=order[(int(state.get('builds', 0)) + slot) % len(order)])
     if shape not in order:
@@ -1129,6 +1146,27 @@ def _choose_project(state):
     top_desire = ''
     if state.get('desires'):
         top_desire = max(state['desires'], key=lambda d: d.get('score', 0)).get('text', '')
+    # A desire with attempts but no outside success can spawn one short,
+    # decaying experiment instead of waiting for the next reflection.
+    desires = sorted(state.get('desires') or [],
+                     key=lambda d: -float(d.get('score', 0)))
+    if desires and random.random() < 0.22:
+        d = desires[0]
+        text = str(d.get('text') or '')
+        if int(d.get('attempts') or 0) > 0 and int(d.get('successes') or 0) == 0:
+            p = {'kind': 'experiment',
+                 'name': 'Test: %s' % text[:50],
+                 'verbs': ['experiment', 'wonder', 'watch', 'browse'],
+                 'place': 'library', 'why': text, 'target': 1, 'progress': 0,
+                 'started': _now(), 'custom': True,
+                 'source': 'desire_experiment'}
+            state['project'] = p
+            state['recent'].insert(0, 'a small experiment: %s' % p['name'])
+            state['recent'] = state['recent'][:6]
+            state['thought'] = 'I want to test that, not just carry it.'
+            _decide(state, 'experiment', 'I am testing: %s.' % text[:90])
+            log('EXPERIMENT start %s' % p['name'])
+            return p
     ideas = [i for i in (state.get('pending_ideas') or [])
              if i.get('status') == 'pending']
     if ideas and random.random() < 0.45:
@@ -1588,6 +1626,30 @@ def _check_signals(state):
 def _complete_project(state):
     p = state.get('project')
     if not p:
+        return
+    if p.get('kind') == 'experiment':
+        text = str(p.get('why') or p.get('name') or '')
+        state.setdefault('projects_done', []).append({
+            'name': p.get('name'), 'kind': 'experiment', 'level': 0,
+            'ts': _now(), 'build_id': None, 'site': p.get('place'),
+            'why': text, 'source': 'desire_experiment',
+            'signals': [], 'measured': False,
+            'relabel': 'Tested: %s' % text[:120],
+        })
+        state['projects_done'] = state['projects_done'][-50:]
+        for d in state.get('desires') or []:
+            if text and str(d.get('text') or '') == text:
+                d['attempts'] = int(d.get('attempts', 0)) + 1
+                break
+        state['project'] = None
+        state['recent'].insert(0, 'finished an experiment: %s' % p.get('name'))
+        state['recent'] = state['recent'][:6]
+        state['thought'] = 'I tested it. I know a little more than I did.'
+        state['next_project_after'] = time.time() + random.randint(5 * 60, 10 * 60)
+        state['mood'] = _mood(state)
+        _write_wishlist(state)
+        _write_self_model(state)
+        log('EXPERIMENT done %s' % p.get('name'))
         return
     kind = p.get('kind', 'monument')
     skill = state.setdefault('skills', {}).setdefault(kind, {'level': 0, 'count': 0})
@@ -2268,6 +2330,9 @@ def _finish_action(state, name):
     state.setdefault('action_history', []).append(name)
     state['action_history'] = state['action_history'][-20:]
     state.setdefault('action_last', {})[name] = time.time()
+    pp = state.setdefault('place_prefs', {})
+    oldp = float(pp.get(place, 0.5))
+    pp[place] = round(max(0.0, min(1.0, 0.9 * oldp + 0.1 * (0.5 + feel / 3.0))), 4)
     state['explore_bias'] = round(1.0 - _entropy(state['action_history'][-12:]), 4)
     _pulse_mood(state, name)
     if name == 'study':
@@ -2349,6 +2414,36 @@ def _safe_external(text, limit=300):
     s = re.sub(r'<[^>]{1,200}>', '', s)
     s = re.sub(r'\s+', ' ', s).strip()
     return s[:limit]
+
+
+def _apply_visits(state):
+    global VISIT_QUEUE
+    with LOCK:
+        items = VISIT_QUEUE[:]
+        VISIT_QUEUE = []
+    for it in items:
+        event = str(it.get('event') or 'load')
+        vid = str(it.get('vid') or '')[:64]
+        dur = max(0.0, min(7200.0, float(it.get('duration') or 0)))
+        ids = state.setdefault('visit_ids', [])
+        if event == 'load':
+            state['visits_total'] = int(state.get('visits_total', 0)) + 1
+            if vid:
+                if vid in ids:
+                    state['visit_returns'] = int(state.get('visit_returns', 0)) + 1
+                else:
+                    ids.append(vid)
+                    state['visit_ids'] = ids[-1000:]
+        elif event == 'leave' and dur:
+            state['visit_seconds_total'] = round(
+                float(state.get('visit_seconds_total', 0)) + dur, 1)
+            state['visit_seconds_n'] = int(state.get('visit_seconds_n', 0)) + 1
+        _append(VISITS, {'ts': _now(), 'event': event, 'vid': vid,
+                         'duration': dur, 'path': str(it.get('path') or '')[:80]})
+    if items:
+        log('VISITS %d events; total=%s unique=%s returns=%s' % (
+            len(items), state.get('visits_total'), len(state.get('visit_ids') or []),
+            state.get('visit_returns')))
 
 
 def _apply_offers(state):
@@ -2612,9 +2707,13 @@ def _write_wishlist(state):
              for n in os.listdir(os.path.join(B, 'data', 'media', 'world'))) else
                 'A KIT film lane: capture/ffmpeg/Remotion from its builds and thoughts.'},
         {'id': 'hero_3d', 'what': 'Build a detailed statue or creature',
-         'status': 'partial',
-         'why': 'Most builds are primitive geometry; tree and lantern are now live.',
-         'how': 'Use TRELLIS/Kaggle for a hero GLB (TODO 20).'},
+         'status': 'live' if any(b.get('glb_url') for b in load_builds()) else 'partial',
+         'why': 'A real textured GLB hero stands in the town.' if any(
+             b.get('glb_url') for b in load_builds()) else
+                'Most builds are primitive geometry; tree and lantern are now live.',
+         'how': 'TRELLIS hero GLB is in the world; the page loads it with GLTFLoader.' if any(
+             b.get('glb_url') for b in load_builds()) else
+                'Use TRELLIS/Kaggle for a hero GLB (TODO 20).'},
     ]
 
     data = {
@@ -2720,6 +2819,35 @@ def _write_self_model(state):
         log('self model failed: %s' % str(e)[:120])
 
 
+def _reflect_call(prompt):
+    """Local first, remote judgment as the fallback. The local lane can hang;
+    cap it at 45s and keep the loop moving."""
+    from shared.llm_router import call_llm
+    ex = None
+    try:
+        ex = ThreadPoolExecutor(max_workers=1)
+        fut = ex.submit(call_llm, prompt=prompt, model='ollama-lfm',
+                        task='judgment', max_tokens=180, temperature=0.85,
+                        fallback=False)
+        try:
+            r = fut.result(timeout=45)
+        except Exception:
+            r = None
+        text = r.get('content') if isinstance(r, dict) else str(r or '')
+        if text and str(text).strip():
+            log('REFLECT local ollama-lfm')
+            return str(text)
+    except Exception as e:
+        log('local reflection unavailable: %s' % str(e)[:100])
+    finally:
+        if ex is not None:
+            ex.shutdown(wait=False)
+    r = call_llm(task='judgment', prompt=prompt, max_tokens=180, temperature=0.85)
+    text = r.get('content') if isinstance(r, dict) else str(r or '')
+    log('REFLECT remote judgment')
+    return str(text or '')
+
+
 def _reflect(state):
     """One LLM call. The only one in the day."""
     now = time.time()
@@ -2770,12 +2898,7 @@ def _reflect(state):
     )
     text = ''
     try:
-        from shared.llm_router import call_llm
-        r = call_llm(task='judgment', prompt=prompt, max_tokens=180, temperature=0.85)
-        if isinstance(r, dict):
-            text = r.get('content') or ''
-        elif isinstance(r, str):
-            text = r
+        text = _reflect_call(prompt)
         state['llm_calls'] = int(state.get('llm_calls', 0)) + 1
     except Exception as e:
         log('reflection LLM failed: %s' % str(e)[:120])
@@ -2920,6 +3043,7 @@ def _apply_world_inputs(state):
 
 
 def tick(state):
+    _apply_visits(state)
     _apply_offers(state)
     _check_mail(state)
     _apply_world_inputs(state)
@@ -3018,7 +3142,25 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {'error': 'not found'})
 
     def do_POST(self):
-        if self.path.split('?')[0] not in ('/offering', '/api/world/offering'):
+        path = self.path.split('?')[0]
+        if path in ('/visit', '/api/world/visit'):
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(n) if n else b'{}'
+                data = json.loads(raw.decode('utf-8') or '{}')
+            except Exception:
+                self._send(400, {'error': 'bad json'})
+                return
+            with LOCK:
+                VISIT_QUEUE.append({
+                    'event': str(data.get('event') or 'load')[:12],
+                    'vid': str(data.get('vid') or '')[:64],
+                    'duration': data.get('duration') or 0,
+                    'path': str(data.get('path') or '')[:80],
+                })
+            self._send(200, {'ok': True})
+            return
+        if path not in ('/offering', '/api/world/offering'):
             self._send(404, {'error': 'not found'})
             return
         try:

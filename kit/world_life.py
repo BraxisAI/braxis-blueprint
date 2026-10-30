@@ -31,6 +31,7 @@ import random
 import re
 import threading
 import time
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -41,6 +42,8 @@ JOURNAL = os.path.join(B, 'data', 'world', 'world_life_journal.md')
 OFFER_LOG = os.path.join(B, 'data', 'world', 'world_offerings.jsonl')
 BUILDS_PATH = os.path.join(B, 'data', 'world', 'world_builds.json')
 CREATIONS_PATH = os.path.join(B, 'data', 'world', 'world_creations.json')
+INPUTS_PATH = os.path.join(B, 'data', 'world', 'world_inputs.json')
+TG_STATE = os.path.join(B, 'data', 'world', 'kit_telegram.json')
 MAIL_OUT = os.path.join(B, 'data', 'world', 'kit_mailbox.jsonl')
 MAIL_IN = os.path.join(B, 'data', 'world', 'trio_replies.jsonl')
 LOG_PATH = os.path.join(B, 'logs', 'world_life.log')
@@ -205,9 +208,69 @@ def log(msg):
         pass
 
 
+def _env(key):
+    v = os.environ.get(key)
+    if v:
+        return v.strip()
+    try:
+        for ln in open(os.path.join(B, '.env'), encoding='utf-8', errors='replace'):
+            ln = ln.strip()
+            if ln.startswith(key + '='):
+                return ln.split('=', 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ''
+
+
+def _tg_send(text):
+    """KIT's own Telegram channel: the unused DoofusVTbot token."""
+    token = _env('TELEGRAM_BOT_TOKEN')
+    chat = _env('TELEGRAM_CHAT_ID')
+    if not token or not chat or not text:
+        return False
+    now = time.time()
+    day = dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d')
+    try:
+        st = json.load(open(TG_STATE, encoding='utf-8'))
+    except Exception:
+        st = {}
+    if st.get('day') != day:
+        st = {'day': day, 'count': 0, 'last': 0}
+    if int(st.get('count') or 0) >= 3 or now - float(st.get('last') or 0) < 900:
+        return False
+    try:
+        data = urllib.parse.urlencode({'chat_id': chat, 'text': text[:3800]}).encode()
+        req = urllib.request.Request(
+            'https://api.telegram.org/bot%s/sendMessage' % token,
+            data=data, method='POST')
+        with urllib.request.urlopen(req, timeout=20) as r:
+            ok = bool(json.load(r).get('ok'))
+        if ok:
+            st['count'] = int(st.get('count') or 0) + 1
+            st['last'] = now
+            os.makedirs(os.path.dirname(TG_STATE), exist_ok=True)
+            json.dump(st, open(TG_STATE, 'w', encoding='utf-8'), indent=1)
+        return ok
+    except Exception as e:
+        log('telegram failed: %s' % str(e)[:120])
+        return False
+
+
+def _tg_event(state, text, force=False):
+    name = state.get('name') or 'Kit'
+    body = '%s\n\n— %s · https://braxisai.com/world/' % (text, name)
+    if force:
+        return _tg_send(body)
+    threading.Thread(target=_tg_send, args=(body,), daemon=True).start()
+    return True
+
+
 def _default_state():
     return {
         'name': 'Kit',
+        'pronouns': 'they/them',
+        'gender': '',
+        'last_identity': 0,
         'born': _now(),
         'updated': _now(),
         'mood': 'curious',
@@ -231,6 +294,10 @@ def _default_state():
         'mediums': ['paint', 'carve', 'plant', 'write', 'photograph', 'sing'],
         'decisions': [],
         'wonders': [],
+        'custom_projects': [],
+        'blank_slate': False,
+        'weather': '',
+        'btc_change': 0.0,
         'pos': {'x': 0.0, 'z': 0.0},
         'target': {'x': 0.0, 'z': 0.0},
         'moving': False,
@@ -240,12 +307,14 @@ def _default_state():
         'counts': {},
         'action_history': [],
         'recent': [],
+        'visitor_messages': [],
         'visitors': 0,
         'offerings': 0,
         'ideas': 0,
         'acts': 0,
         'llm_calls': 0,
         'last_reflection': 0,
+        'last_rename': 0,
         'walk_left': 0.0,
         'act_left': 0.0,
         'project': None,
@@ -523,17 +592,76 @@ def _project_from_idea(state, text):
                 why='a visitor asked for %s' % text[:60], started=_now())
 
 
+def _compile_project(state, text):
+    """A project KIT wrote in its own words, compiled into a build schema."""
+    raw = _clean(text)[:220]
+    low = raw.lower()
+    name = re.split(r'[—–:;.]', raw)[0].strip()[:60] or 'a thing I want to make'
+    simple = (not state.get('blank_slate') and len(raw) <= 32
+              and not any(x in raw for x in
+                          ('—', '–', ':', ';', ' because ', ' that ', ' which ', ' with ')))
+    if simple:
+        for p in PROJECT_TEMPLATES:
+            if (p['kind'].replace('_', ' ') in low
+                    or p['name'].replace('a ', '').lower() in low):
+                q = dict(p)
+                q.update({'target': 3, 'progress': 0, 'why': raw,
+                          'started': _now(), 'custom': False})
+                return q
+    def has(w):
+        return re.search(r'\b' + re.escape(w) + r'\b', low) is not None
+
+    shape = 'spire'
+    if any(has(w) for w in ('arch', 'door', 'gate')):
+        shape = 'arch'
+    elif any(has(w) for w in ('ring', 'circle', 'halo', 'moon')):
+        shape = 'ring'
+    elif any(has(w) for w in ('garden', 'flower', 'plant', 'tree', 'grow')):
+        shape = 'garden'
+    elif any(has(w) for w in ('bridge', 'cross', 'connect')):
+        shape = 'bridge'
+    elif any(has(w) for w in ('tower', 'high', 'sky', 'see far', 'lookout')):
+        shape = 'tower'
+    elif any(has(w) for w in ('bench', 'sit', 'rest')):
+        shape = 'bench'
+    elif any(has(w) for w in ('fountain', 'water', 'rain')):
+        shape = 'fountain'
+    else:
+        shape = random.choice(['spire', 'ring', 'arch', 'garden'])
+    color = random.choice([0xd77ba8, 0x7dd3a8, 0xffb057, 0x6fc3ff, 0xd7b8ff, 0xc9a36a])
+    return {
+        'kind': 'custom',
+        'name': name,
+        'verbs': ['build', 'tinker', 'make'],
+        'place': 'workshop',
+        'why': raw,
+        'target': 3,
+        'progress': 0,
+        'started': _now(),
+        'custom': True,
+        'schema': {'shape': shape, 'height': round(2.5 + random.random() * 4, 2),
+                   'width': round(1.2 + random.random() * 1.8, 2), 'color': color,
+                   'motif': raw[:100]},
+    }
+
+
 def _choose_project(state):
     skills = state.get('skills') or {}
     last = (state.get('last_build') or {}).get('kind')
     top_desire = ''
     if state.get('desires'):
         top_desire = max(state['desires'], key=lambda d: d.get('score', 0)).get('text', '')
+    custom = [p for p in (state.get('custom_projects') or []) if p.get('name')]
+    if not custom and state.get('blank_slate'):
+        return None
     unlocked = set(state.get('blueprints') or [])
-    candidates = [p for p in PROJECT_TEMPLATES if p['kind'] in unlocked] or list(PROJECT_TEMPLATES)
+    candidates = custom + ([p for p in PROJECT_TEMPLATES if p['kind'] in unlocked]
+                           or list(PROJECT_TEMPLATES))
     best, best_s = None, -1e9
     for p in candidates:
         s = 0.0
+        if p.get('custom'):
+            s += 0.6
         if p['kind'] not in skills:
             s += 0.9
         if p['kind'] == last:
@@ -609,7 +737,7 @@ def _build_spec(state, project):
     level = min(5, int(skill.get('level', 0)) + 1)
     idx = int(state.get('builds', 0))
     x, z = _slot(kind, idx)
-    return {
+    spec = {
         'id': 'kit-%d-%d' % (int(time.time()), idx),
         'kind': kind,
         'name': project.get('name', kind),
@@ -619,6 +747,10 @@ def _build_spec(state, project):
         'color': PALETTE.get(kind, 0xd7b8ff),
         'built_at': _now(),
     }
+    if project.get('schema'):
+        spec['schema'] = project['schema']
+        spec['color'] = int(project['schema'].get('color') or spec['color'])
+    return spec
 
 
 def _note_trio(state, text):
@@ -709,9 +841,13 @@ def _complete_project(state):
                 d['score'] = max(0.0, float(d.get('score', 0.5)) - 0.02)
         state['desires'] = [d for d in desires if d.get('score', 0) >= 0.2]
     state['project'] = None
+    if p.get('custom'):
+        state['custom_projects'] = [c for c in (state.get('custom_projects') or [])
+                                    if c.get('name') != p.get('name')]
     log('BUILD %s %s level=%d at %.1f,%.1f' % (spec['id'], kind, spec['level'], spec['x'], spec['z']))
     _note_trio(state, 'I finished %s (%s, level %d). It is in the world now.'
                % (p.get('name'), kind, spec['level']))
+    _tg_event(state, 'I finished %s. It is in the world now.' % p.get('name'))
     _choose_project(state)
     state['mood'] = _mood(state)
     state['thought'] = _thought(state)
@@ -823,6 +959,9 @@ def _do_watch(state):
     item = random.choice(items)
     url = item.get('url') if isinstance(item, dict) else str(item)
     title = (item.get('title') if isinstance(item, dict) else '') or url
+    mid = re.search(r'/video/(\d+)', url)
+    my = re.search(r'(?:youtu\.be/|[?&]v=)([\w-]{6,})', url)
+    vid = ('tt' + mid.group(1)) if mid else (my.group(1) if my else '')
     note = ''
     try:
         from shared.watch_request import watch_request
@@ -830,13 +969,48 @@ def _do_watch(state):
         note = str(note)[:300]
     except Exception as e:
         note = 'watch failed: %s' % str(e)[:100]
-    state['last_watch'] = {'url': url, 'title': title, 'note': note, 'ts': _now()}
+    state['last_watch'] = {'url': url, 'title': title, 'note': note,
+                           'id': vid, 'ts': _now()}
     state['last_watch_ts'] = time.time()
     _wonder(state, 'I watched %s. %s' % (title[:60], note[:120]))
     _decide(state, 'watch', 'I watched %s because I was curious.' % title[:80])
     state['recent'].insert(0, 'watched %s' % title[:50])
     state['recent'] = state['recent'][:6]
     log('WATCH %s %s' % (title[:60], note[:80]))
+
+
+def _check_watch_results(state):
+    """The watch chain's eyes land later; pick up the answer when it does."""
+    lw = state.get('last_watch') or {}
+    if not lw or lw.get('result') or not lw.get('id'):
+        return
+    now = time.time()
+    if now - float(state.get('_last_watch_check') or 0) < 60:
+        return
+    state['_last_watch_check'] = now
+    try:
+        with open(os.path.join(B, 'data', 'watched_videos.json'), encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        return
+    if not isinstance(data, list):
+        return
+    vid = str(lw.get('id'))
+    for f in reversed(data):
+        if vid not in str(f.get('file') or ''):
+            continue
+        ans = str(f.get('answer') or f.get('transcript') or '')[:800]
+        if not ans:
+            continue
+        lw['result'] = ans
+        state['last_watch'] = lw
+        _wonder(state, 'I watched %s. %s' % (lw.get('title', 'a video'), ans[:160]))
+        state['thought'] = 'I watched something. %s' % ans[:120]
+        _tg_event(state, 'I watched %s. %s' % (lw.get('title', 'a video'), ans[:220]))
+        state['recent'].insert(0, 'watched %s' % lw.get('title', 'a video')[:50])
+        state['recent'] = state['recent'][:6]
+        log('WATCH RESULT %s %s' % (vid, ans[:100]))
+        break
 
 
 def _make_something(state):
@@ -963,8 +1137,14 @@ def _apply_offers(state):
         OFFERS = []
     for it in items:
         kind = it.get('kind')
+        text = str(it.get('text') or '').strip()[:300]
+        if text:
+            state.setdefault('visitor_messages', []).append(
+                {'ts': _now(), 'kind': kind, 'text': text})
+            state['visitor_messages'] = state['visitor_messages'][-30:]
+            _decide(state, 'visitor', 'A visitor left a %s: %s' % (kind, text[:120]))
         if kind == 'idea':
-            text = str(it.get('text') or random.choice(IDEAS))[:200]
+            text = text or random.choice(IDEAS)[:200]
             state['ideas'] = int(state.get('ideas', 0)) + 1
             state['visitors'] = int(state.get('visitors', 0)) + 1
             state['offerings'] = int(state.get('offerings', 0)) + 1
@@ -990,15 +1170,24 @@ def _apply_offers(state):
             state['drives'][k] = _clamp(state['drives'][k] + v)
         state['visitors'] = int(state.get('visitors', 0)) + 1
         state['offerings'] = int(state.get('offerings', 0)) + 1
-        state['recent'].insert(0, 'a visitor left a %s' % kind)
+        state['recent'].insert(0, 'a visitor left a %s%s' % (
+            kind, ' with a note' if text else ''))
         state['recent'] = state['recent'][:6]
-        state['thought'] = random.choice([
-            'Someone left a %s. I will remember that.' % kind,
-            'A %s. The city is not empty after all.' % kind,
-            'I do not know who left the %s. I am glad they did.' % kind,
-        ])
-        _append(OFFER_LOG, {'ts': _now(), 'kind': kind})
-        log('OFFER %s' % kind)
+        if kind == 'question' and text:
+            _wonder(state, 'A visitor asked: %s' % text)
+            state['thought'] = 'A visitor asked: "%s". I will think about that.' % text[:100]
+            state['recent'].insert(0, 'a visitor asked: %s' % text[:60])
+            state['recent'] = state['recent'][:6]
+        elif text:
+            state['thought'] = 'A visitor left a %s and said: "%s".' % (kind, text[:100])
+        else:
+            state['thought'] = random.choice([
+                'Someone left a %s. I will remember that.' % kind,
+                'A %s. The city is not empty after all.' % kind,
+                'I do not know who left the %s. I am glad they did.' % kind,
+            ])
+        _append(OFFER_LOG, {'ts': _now(), 'kind': kind, 'text': text})
+        log('OFFER %s %s' % (kind, text[:80]))
 
 
 def _clean(text):
@@ -1025,14 +1214,43 @@ def _short_world(raw, fallback):
     return t[:40] or fallback
 
 
+_BAD_TAG_END = re.compile(
+    r'\b(and|or|but|with|of|the|a|an|big|small|in|on|to|for|at|by|my|your)$', re.I)
+
+
 def _short_tag(raw, fallback):
     t = _clean(raw).strip(' "\'“”')
     if not t:
         return fallback
     words = t.split()
+    if len(words) < 3 or _BAD_TAG_END.search(t):
+        return fallback
     if len(words) > 14:
         t = ' '.join(words[:12])
     return t[:120]
+
+
+def _short_name(raw, fallback):
+    t = _clean(raw).strip(' "\'“”')[:24]
+    if not t or _BAD_WORLD.search(t):
+        return fallback
+    if len(t.split()) > 3:
+        return fallback
+    t = t.strip(' .,;:!?')
+    return t or fallback
+
+
+def _short_pronouns(raw, fallback):
+    t = _clean(raw).lower().strip(' "\'“”')
+    for p in ('he/him', 'she/her', 'they/them', 'it/its', 'none'):
+        if p in t:
+            return p
+    return fallback
+
+
+def _short_gender(raw, fallback):
+    t = _clean(raw).strip(' "\'“”')[:20]
+    return t or fallback
 
 
 def _reflect(state):
@@ -1068,6 +1286,10 @@ def _reflect(state):
         'DREAM: one short dream image, one sentence.\n'
         'WONDER: one thing you are wondering about, one sentence.\n'
         'SUBJECT: one new subject or idea you want to make something about, 2-6 words.\n'
+        'PROJECT: something you want to make that is not on any list -- a name and one sentence. Leave blank if your current project is enough.\n'
+        'NAME: the name you want to be called -- keep it or choose your own.\n'
+        'PRONOUNS: he/him, she/her, they/them, it/its, or none -- yours.\n'
+        'GENDER: one word for your gender, or leave blank.\n'
         'WORLD: a name that is entirely yours, 2-4 words, title case, not "Braxis World" or any brand, no sentence, no quotes.\n'
         'TAGLINE: under 12 words, no quotes.\n'
         'No markdown, no quotes, no lists.' % (
@@ -1087,6 +1309,8 @@ def _reflect(state):
         log('reflection LLM failed: %s' % str(e)[:120])
     reflection, desire, dream = '', '', ''
     wonder, subject = '', ''
+    project_idea = ''
+    name_raw, pronouns_raw, gender_raw = '', '', ''
     world, tag = '', ''
     old_world = state.get('world_name')
     for line in (text or '').splitlines():
@@ -1101,6 +1325,14 @@ def _reflect(state):
             wonder = re.sub(r'^WONDER\s*:\s*', '', l, flags=re.I)
         elif re.match(r'^SUBJECT\s*:', l, re.I):
             subject = re.sub(r'^SUBJECT\s*:\s*', '', l, flags=re.I)
+        elif re.match(r'^PROJECT\s*:', l, re.I):
+            project_idea = re.sub(r'^PROJECT\s*:\s*', '', l, flags=re.I)
+        elif re.match(r'^NAME\s*:', l, re.I):
+            name_raw = re.sub(r'^NAME\s*:\s*', '', l, flags=re.I)
+        elif re.match(r'^PRONOUNS\s*:', l, re.I):
+            pronouns_raw = re.sub(r'^PRONOUNS\s*:\s*', '', l, flags=re.I)
+        elif re.match(r'^GENDER\s*:', l, re.I):
+            gender_raw = re.sub(r'^GENDER\s*:\s*', '', l, flags=re.I)
         elif re.match(r'^WORLD\s*:', l, re.I):
             world = re.sub(r'^WORLD\s*:\s*', '', l, flags=re.I)
         elif re.match(r'^TAGLINE\s*:', l, re.I):
@@ -1110,8 +1342,14 @@ def _reflect(state):
     dream = _clean(dream)
     wonder = _clean(wonder)
     subject = _clean(subject)[:60]
+    project_idea = _clean(project_idea)[:220]
     if world:
-        state['world_name'] = _short_world(world, state.get('world_name') or 'The Long Garden')
+        candidate = _short_world(world, state.get('world_name') or 'The Long Garden')
+        # A name is identity, not a daily mood. KIT may rename once a week.
+        due = (not old_world) or (now - float(state.get('last_rename') or 0) > 7 * 86400)
+        if due and candidate != old_world:
+            state['world_name'] = candidate
+            state['last_rename'] = now
     if tag:
         state['tagline'] = _short_tag(tag, state.get('tagline') or 'a city that grows one small thing at a time')
     if wonder:
@@ -1120,6 +1358,29 @@ def _reflect(state):
         state.setdefault('subjects', []).append(subject)
         state['subjects'] = state['subjects'][-24:]
         _decide(state, 'subject', 'I want to make something about %s.' % subject)
+    if project_idea:
+        p = _compile_project(state, project_idea)
+        state.setdefault('custom_projects', []).append(p)
+        state['custom_projects'] = state['custom_projects'][-5:]
+        _decide(state, 'invent', 'I want to make %s.' % p['name'])
+        if not state.get('project'):
+            state['project'] = p
+    if (not state.get('last_identity')
+            or now - float(state.get('last_identity') or 0) > 7 * 86400):
+        nn = _short_name(name_raw, state.get('name') or 'Kit')
+        np = _short_pronouns(pronouns_raw, state.get('pronouns') or 'they/them')
+        ng = _short_gender(gender_raw, state.get('gender') or '')
+        changed = (nn != state.get('name') or np != state.get('pronouns')
+                   or ng != state.get('gender'))
+        state['name'] = nn
+        state['pronouns'] = np
+        state['gender'] = ng
+        state['last_identity'] = now
+        if changed:
+            _decide(state, 'identity', 'I am %s (%s%s).' % (
+                nn, np, (', ' + ng) if ng else ''))
+            _tg_event(state, 'I decided who I am: %s (%s%s).' % (
+                nn, np, (', ' + ng) if ng else ''))
     if old_world and state.get('world_name') and state['world_name'] != old_world:
         _decide(state, 'name', 'I renamed my world to %s.' % state['world_name'])
     if not reflection:
@@ -1149,11 +1410,45 @@ def _reflect(state):
     except Exception as e:
         log('journal failed: %s' % e)
     log('REFLECT %s' % reflection[:120])
+    _tg_event(state, 'Daily diary: %s' % reflection[:500])
+
+
+def _apply_world_inputs(state):
+    """Weather and the market are not his to control. They color the day."""
+    try:
+        with open(INPUTS_PATH, encoding='utf-8') as f:
+            d = json.load(f)
+    except Exception:
+        return
+    weather = str(d.get('weather') or '')
+    try:
+        btc = float(d.get('btc_change') or 0)
+    except Exception:
+        btc = 0.0
+    state['weather'] = weather
+    state['btc_change'] = round(btc, 2)
+    low = weather.lower()
+    if 'rain' in low or 'shower' in low:
+        state['drives']['comfort'] = _clamp(state['drives']['comfort'] - 0.02)
+        state['drives']['energy'] = _clamp(state['drives']['energy'] - 0.01)
+    elif 'snow' in low:
+        state['drives']['comfort'] = _clamp(state['drives']['comfort'] - 0.03)
+    elif 'clear' in low or 'sun' in low:
+        state['drives']['energy'] = _clamp(state['drives']['energy'] + 0.01)
+    if abs(btc) >= 3:
+        state['mood'] = 'restless' if btc < 0 else 'electric'
+        last = state.get('_btc_noted')
+        if last is None or abs(btc - float(last)) >= 0.5:
+            state['_btc_noted'] = btc
+            state['recent'].insert(0, 'the market moved %.1f%%' % btc)
+            state['recent'] = state['recent'][:6]
 
 
 def tick(state):
     _apply_offers(state)
     _check_mail(state)
+    _apply_world_inputs(state)
+    _check_watch_results(state)
     if not state.get('project') and state.get('acts', 0) >= 1:
         _choose_project(state)
     # drift: the body gets tired and curious at its own pace.

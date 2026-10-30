@@ -88,11 +88,36 @@ recovery archive; the `.pm2` golden dumps are process lists, not code.
 - Social posts route through the estate's determiner, which ranks platforms by
   measured performance; no model per post.
 
+## Chat, identity, eyes, live clips
+
+- **Telegram:** KIT has its own bot (the old Doofus token, display name **KIT**).
+  `kit_chat.py` polls every minute and replies in KIT's voice from its live state.
+  Calls are free-tier and only happen when the founder messages. The trio stays
+  on @brsoul_bot.
+- **Identity:** KIT chose **Kit**, **they/them**, **androgynous**. The daily
+  reflection can change name/pronouns/gender weekly; page tag, HUD, Telegram and
+  chat use them.
+- **Eyes:** `shared/watch_request` accepts TikTok; the Pino video is queued.
+  watch-skill produces scene lines + transcript; the insight step answers the
+  ask, and KIT reads the result.
+- **Live clips:** `world_video.py` records a 15-second vertical window of
+  `/world/?video=1`, converts with ffmpeg, and routes through the determiner.
+  First clip: TikTok 92.66 views/video post (456), IG 71.39 (212),
+  YouTube 29.61 (2464).
+- **Support:** KIT's world has a Stripe pay-what-you-want link:
+  https://buy.stripe.com/7sYbJ120g39I5Kq34F7ES22
+- **Reset:** `kit_reset.py --blank` archives the current life and removes the
+  starting blueprints so the first project must be self-invented. A normal
+  reset still starts from the three blueprints.
+
 ## Files
 
 - `world_life.py` — the resident's brain and HTTP API.
 - `kit_watcher.py` — the dreamkeeper; reads journals/dreams and gifts a
   blueprint when a dream matches a locked one.
+- `kit_chat.py` — KIT's Telegram conversation loop.
+- `world_video.py` — a 15-second window into the live world.
+- `kit_reset.py` — archive and restart; `--blank` for self-invented projects.
 - `world_share.py` — Playwright capture of a build, then the determiner routes
   the post.
 

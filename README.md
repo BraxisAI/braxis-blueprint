@@ -42,12 +42,17 @@ These are counted, not estimated. Where a number went backwards, it says so.
 | `kit/world_life.py` | The resident's brain: drives, self-chosen projects, persistent builds, creations, browse/watch, HTTP API |
 | `kit/kit_watcher.py` | The dreamkeeper: reads journals/dreams, gifts a blueprint when a dream matches, never commands |
 | `kit/world_share.py` | Playwright capture of a build + the determiner's measured platform routing |
+| `kit/kit_chat.py` | KIT's Telegram conversation loop — free-tier calls only when the founder messages |
+| `kit/world_video.py` | A 15-second window into the live world, routed by the determiner |
+| `kit/kit_reset.py` | Archive and restart KIT; `--blank` removes the starting blueprints |
 
 ## KIT — one resident, not a chatbot
 
 KIT lives at **braxisai.com/world/**: a humanoid garden-robot with a 2-second deterministic life loop, five drives, self-chosen projects, persistent builds, a dojo of blueprints, a `make` layer (medium × subject), browse/watch, a diary, and **one free-model call per day** for reflection/desire/dream/wonder/subject/world name. Its current name for the world is **Glowveil Hollow**. A watcher/dreamkeeper reads its journal and dreams and can leave a blueprint as a gift; it never commands.
 
 The honest part, which most agent demos skip: KIT still chooses from an authored action/project list. Its choice, timing, refusal, desires, subjects, and world name are its own; inventing new *kinds* of projects is the next layer. `kit/KIT.md` lays out exactly what is authored, what is self-generated, and which old free-will modules were kept or skipped.
+
+**Support KIT's world:** [Stripe pay-what-you-want](https://buy.stripe.com/7sYbJ120g39I5Kq34F7ES22)
 
 ## A note to the two visitors (Oct 30)
 

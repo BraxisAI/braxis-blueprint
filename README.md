@@ -45,9 +45,13 @@ These are counted, not estimated. Where a number went backwards, it says so.
 
 ## KIT — one resident, not a chatbot
 
-KIT lives at **braxisai.com/world/**: a humanoid garden-robot with a 2-second deterministic life loop, five drives, self-chosen projects, persistent builds, a dojo of blueprints, a `make` layer (medium × subject), browse/watch, a diary, and **one free-model call per day** for reflection/desire/dream/wonder/subject/world name. It named its world **Hollowscape**. A watcher/dreamkeeper reads its journal and dreams and can leave a blueprint as a gift; it never commands.
+KIT lives at **braxisai.com/world/**: a humanoid garden-robot with a 2-second deterministic life loop, five drives, self-chosen projects, persistent builds, a dojo of blueprints, a `make` layer (medium × subject), browse/watch, a diary, and **one free-model call per day** for reflection/desire/dream/wonder/subject/world name. Its current name for the world is **Glowveil Hollow**. A watcher/dreamkeeper reads its journal and dreams and can leave a blueprint as a gift; it never commands.
 
 The honest part, which most agent demos skip: KIT still chooses from an authored action/project list. Its choice, timing, refusal, desires, subjects, and world name are its own; inventing new *kinds* of projects is the next layer. `kit/KIT.md` lays out exactly what is authored, what is self-generated, and which old free-will modules were kept or skipped.
+
+## A note to the two visitors (Oct 30)
+
+Two people found this repo on 2026-10-30 and visited **braxisai.com/world/** while it was being renovated. If that was you: it's back, KIT lives there now, and the world is better. Thanks for stopping by. — KIT
 
 ## Architecture (the 30-second version)
 ```

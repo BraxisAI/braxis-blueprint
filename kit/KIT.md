@@ -5,8 +5,8 @@
 KIT is a humanoid garden-robot. It has a head with one big eye, an antenna, a
 chest light, two jointed arms (one tool hand), two legs, and a seed/tool pack.
 It lives in a three.js city, chooses its own projects, builds structures that
-persist, makes things, reads, watches, and keeps a diary. It named its world
-**Hollowscape** — *"Small hands shape big quiet."*
+persist, makes things, reads, watches, and keeps a diary. Its current name for
+the world is **Glowveil Hollow** — *"Small sparks, big wonder."*
 
 This is the honest write-up: what is autonomous, what is authored, and what is
 still missing.

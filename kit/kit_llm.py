@@ -15,7 +15,7 @@ B = '/home/ubuntu/braxis-2.0'
 BUDGET_PATH = os.path.join(B, 'data', 'world', 'kit_llm_budget.json')
 LEDGER = os.path.join(B, 'data', 'world', 'kit_llm_ledger.jsonl')
 LOCK = os.path.join(B, 'data', 'world', 'kit_llm_budget.lock')
-CAP = 16
+CAP = 24
 LEAD = 'openrouter-nemotron-ultra-free'
 
 

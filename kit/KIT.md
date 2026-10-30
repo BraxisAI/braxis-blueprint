@@ -23,8 +23,8 @@ still missing.
 - Actions are chosen by need + learned preference + project alignment +
   novelty + curiosity + repetition cost + day arc + action age.
 - Preferences are EMA-updated from how an action felt.
-- **Free-model budget:** one daily reflection plus up to 15 event summaries,
-  shared **16 calls/day** cap. The lead is the free OpenRouter 550B Nemotron
+- **Free-model budget:** one daily reflection plus up to 23 event summaries,
+  shared **24 calls/day** cap. The lead is the free OpenRouter 550B Nemotron
   Ultra; the fallback is the free background chain. No model in the tick.
 - A separate `post` action lets KIT send at most one honest social update a day
   through the estate's determiner and publisher gates.
@@ -131,7 +131,7 @@ modules are in the private recovery archive.
 ## Stack / cost
 
 - No model in the tick. KIT's lead is the **free OpenRouter 550B Nemotron
-  Ultra**; fallback is the free background chain. **16 autonomous calls/day**
+  Ultra**; fallback is the free background chain. **24 autonomous calls/day**
   shared by the reflection and event summaries; chat is on demand. Paid
   OpenRouter lanes are reserved for Vesper/MAYA and never enter KIT's chain.
 - Procedural three.js/canvas art; a real image lane at most 1/day.

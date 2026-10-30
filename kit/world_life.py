@@ -381,6 +381,13 @@ def _default_state():
         'creative_counts': {},
         'creative_hobby': '',
         'last_creation': None,
+        'interests': [],
+        'recent_mediums': [],
+        'self_observation': '',
+        'self_observed_ts': 0.0,
+        'last_project_end': 0.0,
+        'project_origin_counts': {},
+        'browse_topic': '',
         'subjects': ['the garden', 'the city', 'a cat', 'a bird', 'the visitors',
                      'the lantern', 'the fountain', 'the sky', 'a dream', 'the trio',
                      'trains', 'planes', 'architecture', 'space', 'history', 'music'],
@@ -843,7 +850,11 @@ def choose(state):
                 need += v * (1.0 + max(0.0, d[k] - 3.0) / 7.0)
         if d['energy'] < 2.5 and name not in ('rest', 'sunbathe'):
             need -= 2.5
-        pref = prefs.get(name, 0.5)
+        raw_pref = prefs.get(name, 0.5)
+        # A taste is a bias, not a rut: keep half the distance from neutral.
+        pref = 0.5 + (raw_pref - 0.5) * 0.65
+        seen_count = int(state.get('counts', {}).get(name, 0))
+        overuse = -min(1.1, max(0.0, (seen_count - 40) * 0.02))
         novelty = 0.55 if name not in seen else 0.0
         project_bonus = 0.0
         if project:
@@ -857,21 +868,47 @@ def choose(state):
         if name == 'make':
             creative_bonus = 0.35 + (0.35 if d.get('curiosity', 5) > 6 else 0.0)
         cooldown = 0.0
-        if name in CREATION_ACTIONS and time.time() - float(state.get('last_make_ts') or 0) < 10 * 60:
-            cooldown = -2.0
+        if name in CREATION_ACTIONS and time.time() - float(state.get('last_make_ts') or 0) < 30 * 60:
+            cooldown = -2.5
         if name == 'post' and time.time() - float(state.get('last_post_ts') or 0) < 20 * 3600:
             cooldown = -3.0
-        if name == 'browse' and time.time() - float(state.get('last_browse') or 0) < 3600:
-            cooldown = -2.0
-        if name == 'watch' and time.time() - float(state.get('last_watch_ts') or 0) < 6 * 3600:
-            cooldown = -3.0
+        if name == 'browse':
+            age = time.time() - float(state.get('last_browse') or 0)
+            if age < 30 * 60:
+                cooldown = -2.0
+            elif age > 90 * 60:
+                cooldown = 0.9
+        if name == 'watch':
+            age = time.time() - float(state.get('last_watch_ts') or 0)
+            if age < 4 * 3600:
+                cooldown = -3.0
+            elif age > 8 * 3600:
+                cooldown = 1.1
+        if name == 'wonder':
+            age = time.time() - float((state.get('action_last') or {}).get('wonder') or 0)
+            if age < 20 * 60:
+                cooldown -= 2.5
+        if name in ('read', 'study'):
+            age = time.time() - float((state.get('action_last') or {}).get(name) or 0)
+            if age < 20 * 60:
+                cooldown -= 1.4
+        if name in CREATION_ACTIONS:
+            med = CREATION_MEDIUM.get(name) or name
+            hits = _recent_mediums(state, 6).count(med)
+            cooldown -= 0.85 * hits
+            if med == 'write' and hits:
+                cooldown -= 1.4
+        if not project and name in ('browse', 'watch', 'read', 'explore'):
+            cooldown += 0.40
+        if name in ('browse', 'watch', 'read') and (state.get('interests') or []):
+            cooldown += 0.30
         # Break the rut: repeated actions get old fast. An action not seen
         # in the last ten gets a real bonus; the old -0.45 was too gentle.
         recent_hits = sum(1 for a in recent_actions[-8:] if a == name)
-        repeat_penalty = -0.65 * recent_hits
+        repeat_penalty = -0.90 * recent_hits
         if name == last_action:
-            repeat_penalty -= 1.0
-        variety = 0.45 if name not in recent_actions[-10:] else 0.0
+            repeat_penalty -= 1.30
+        variety = 0.55 if name not in recent_actions[-10:] else 0.0
         place_pref = float((state.get('place_prefs') or {}).get(place, 0.5))
         place_bonus = (place_pref - 0.5) * 0.3
         last_thought = str((state.get('thought_history') or [''])[-1]).lower()
@@ -890,7 +927,8 @@ def choose(state):
                                          'watch fountain', 'compose', 'wonder') else 0.0
         s = (need + pref * 1.2 + novelty + project_bonus + curious_bonus
              + creative_bonus + cooldown + repeat_penalty + variety + age_bonus
-             + day_bonus + place_bonus + thought_bonus + random.random() * 0.55)
+             + overuse + day_bonus + place_bonus + thought_bonus
+             + random.random() * 0.55)
         if s > best_s:
             best, best_s = name, s
     # A small deliberate randomness keeps a day from collapsing into one
@@ -906,27 +944,96 @@ def _obstacle_radius(build):
     return 3.2 if build.get('glb_url') else 1.7
 
 
-def _blocked(x, z, builds):
+def _load_obstacles():
+    """Trees, props and city blocks the page reports. Static, cheap, shared."""
+    try:
+        with open(os.path.join(B, 'data', 'world', 'world_obstacles.json'),
+                  encoding='utf-8') as f:
+            data = json.load(f)
+        items = data.get('obstacles') if isinstance(data, dict) else data
+        out = []
+        for o in (items or [])[:600]:
+            try:
+                out.append({'x': float(o.get('x') or 0),
+                            'z': float(o.get('z') or 0),
+                            'r': max(0.45, min(6.0, float(o.get('r') or 1.0)))})
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
+
+
+def _blocked(x, z, builds, obstacles=None, margin=0.0):
     for b in builds:
-        r = _obstacle_radius(b)
+        r = _obstacle_radius(b) + margin
         if math.hypot(x - float(b.get('x') or 0),
                       z - float(b.get('z') or 0)) < r:
             return True
+    for o in (obstacles or []):
+        r = float(o.get('r') or 1.0) + margin
+        if math.hypot(x - float(o.get('x') or 0),
+                      z - float(o.get('z') or 0)) < r:
+            return True
     return False
+
+
+def _avoid_step(px, pz, tx, tz, step, builds, obstacles):
+    """One step that goes around a trunk instead of through it.
+
+    Try the direct heading, then progressively wider detours; pick the one
+    that gets closest to the target without entering an obstacle. The old
+    push-out loop only fixed the point after it was already inside.
+    """
+    base = math.atan2(tz - pz, tx - px)
+    best, best_score = None, 1e18
+    for off in (0.0, 0.32, -0.32, 0.64, -0.64, 0.96, -0.96,
+                1.28, -1.28, 1.60, -1.60, 1.92, -1.92):
+        a = base + off
+        nx = px + math.cos(a) * step
+        nz = pz + math.sin(a) * step
+        if _blocked(nx, nz, builds, obstacles, margin=0.30):
+            continue
+        score = math.hypot(tx - nx, tz - nz) + abs(off) * 0.65
+        if score < best_score:
+            best, best_score = (nx, nz), score
+    if best:
+        return best
+    # Tight corner: fall back to the old repulsion so it never sticks.
+    nx = px + math.cos(base) * step
+    nz = pz + math.sin(base) * step
+    for b in builds:
+        bx = float(b.get('x') or 0)
+        bz = float(b.get('z') or 0)
+        r = _obstacle_radius(b)
+        dd = math.hypot(nx - bx, nz - bz)
+        if 0.001 < dd < r:
+            nx = bx + (nx - bx) / dd * r
+            nz = bz + (nz - bz) / dd * r
+    for o in obstacles:
+        ox = float(o.get('x') or 0)
+        oz = float(o.get('z') or 0)
+        r = float(o.get('r') or 1.0)
+        dd = math.hypot(nx - ox, nz - oz)
+        if 0.001 < dd < r:
+            nx = ox + (nx - ox) / dd * r
+            nz = oz + (nz - oz) / dd * r
+    return nx, nz
 
 
 def _walk_to(state, place):
     p = LOCS[place]
     tx, tz = float(p['x']), float(p['z'])
     builds = load_builds()
-    if _blocked(tx, tz, builds):
+    obstacles = _load_obstacles()
+    if _blocked(tx, tz, builds, obstacles, margin=0.35):
         found = False
         for ring in (2.8, 4.2, 5.8, 7.5, 9.5):
             for k in range(12):
                 a = k * math.pi / 6
                 cx = tx + math.cos(a) * ring
                 cz = tz + math.sin(a) * ring
-                if not _blocked(cx, cz, builds):
+                if not _blocked(cx, cz, builds, obstacles, margin=0.35):
                     tx, tz = cx, cz
                     found = True
                     break
@@ -992,7 +1099,7 @@ def _compile_project(state, text):
         raw = 'a small monument for the town'
         log('public-safety: project subject replaced')
     low = raw.lower()
-    name = re.split(r'[—–:;.]', raw)[0].strip()[:60] or 'a thing I want to make'
+    name = re.split(r'[—–:;.|]|\s+--\s+', raw)[0].strip()[:60] or 'a thing I want to make'
     simple = (not state.get('blank_slate') and len(raw) <= 32
               and not any(x in raw for x in
                           ('—', '–', ':', ';', ' because ', ' that ', ' which ', ' with ')))
@@ -1108,6 +1215,10 @@ def _compose_next_project(state, slot=0):
         subject = re.sub(
             r'^(I wonder|I am wondering|I want to see|I want to know)\s+',
             '', wonder, flags=re.I).strip(' .!?')[:40]
+    interests = [str(i.get('text')) for i in (state.get('interests') or [])
+                 if _public_safe(str(i.get('text') or ''))]
+    if not subject and interests:
+        subject = interests[(int(state.get('builds', 0)) + slot) % len(interests)]
     if not subject and subjects:
         subject = subjects[(int(state.get('builds', 0)) + slot) % len(subjects)]
     subject = _clean(subject)[:40] or 'the garden'
@@ -1228,6 +1339,30 @@ def _choose_project(state):
         log('IDEA accepted %s' % p['name'])
         return p
     custom = [p for p in (state.get('custom_projects') or []) if p.get('name')]
+    queue = [p for p in (state.get('project_queue') or []) if p.get('name')]
+    if queue:
+        best = dict(queue.pop(0))
+        state['project_queue'] = queue
+        best['target'] = int(best.get('target') or 2)
+        best['progress'] = 0
+        best['started'] = _now()
+        best['source'] = best.get('source') or 'self'
+        state['project'] = best
+        counts = state.setdefault('project_origin_counts', {})
+        counts[best['source']] = int(counts.get(best['source'], 0)) + 1
+        state['recent'].insert(0, 'a new project: %s' % best['name'])
+        state['recent'] = state['recent'][:6]
+        state['thought'] = 'I want to make %s. %s.' % (best['name'], best.get('why', ''))
+        _decide(state, 'project', 'I chose %s because %s.' % (best['name'], best.get('why', '')))
+        log('PROJECT start %s (%s, self-authored)' % (best['name'], best.get('kind')))
+        return best
+    if not custom and not queue:
+        idle = time.time() - float(state.get('last_project_end') or 0)
+        wait = 30 * 60 if state.get('blank_slate') else 90 * 60
+        if idle < wait:
+            state['next_project_after'] = time.time() + 10 * 60
+            state['thought'] = 'I am between things. I want the next thing to be mine, not a reflex.'
+            return None
     if not custom and state.get('blank_slate'):
         # Continuity: a blank slate must not mean "wait until tomorrow." If no
         # authored project exists, compose a deterministic one from what KIT
@@ -1277,11 +1412,14 @@ def _choose_project(state):
     best['why'] = top_desire or best.get('why') or 'because it wants to'
     best['started'] = _now()
     state['project'] = best
+    origin = str(best.get('source') or 'template')
+    counts = state.setdefault('project_origin_counts', {})
+    counts[origin] = int(counts.get(origin, 0)) + 1
     state['recent'].insert(0, 'a new project: %s' % best['name'])
     state['recent'] = state['recent'][:6]
     state['thought'] = 'I want to make %s. %s.' % (best['name'], best['why'])
     _decide(state, 'project', 'I chose %s because %s.' % (best['name'], best['why']))
-    log('PROJECT start %s (%s)' % (best['name'], best['kind']))
+    log('PROJECT start %s (%s, origin=%s)' % (best['name'], best['kind'], origin))
     return best
 
 
@@ -1484,7 +1622,8 @@ def _check_mail(state):
             if not text:
                 continue
             state['message'] = text[:240]
-            state['thought'] = 'The trio says: %s' % text[:120]
+            state['thought'] = ('The watcher noticed: %s' if msg.get('kind') == 'nudge'
+                                else 'The trio says: %s') % text[:120]
             state['recent'].insert(0, 'a reply from the trio')
             state['recent'] = state['recent'][:6]
             gift = str(msg.get('gift') or '')
@@ -1498,6 +1637,19 @@ def _check_mail(state):
                     state['recent'].insert(0, 'the watcher left a blueprint: %s' % kind)
                     state['recent'] = state['recent'][:6]
                     state['thought'] = 'A gift from the watcher. I can build %s now.' % kind.replace('_', ' ')
+            avoid = str(msg.get('avoid_medium') or '').strip()
+            if avoid:
+                prefs = state.setdefault('creative_prefs', {})
+                for pair in list(prefs):
+                    if pair.startswith(avoid + ':'):
+                        prefs[pair] = round(max(0.05, float(prefs[pair]) - 0.20), 4)
+                state['self_observation'] = text[:220]
+                state['recent'].insert(0, 'a nudge: I have been repeating %s' % avoid)
+                state['recent'] = state['recent'][:6]
+                log('WATCHER NUDGE avoid=%s' % avoid)
+            suggested = str(msg.get('suggest_subject') or '').strip()
+            if suggested:
+                _interest_add(state, suggested, 'watcher', 0.50)
             if msg.get('project'):
                 p = _project_from_idea(state, text)
                 state['project'] = p
@@ -1687,7 +1839,8 @@ def _complete_project(state):
         state['recent'].insert(0, 'finished an experiment: %s' % p.get('name'))
         state['recent'] = state['recent'][:6]
         state['thought'] = 'I tested it. I know a little more than I did.'
-        state['next_project_after'] = time.time() + random.randint(5 * 60, 10 * 60)
+        state['next_project_after'] = time.time() + random.randint(20 * 60, 40 * 60)
+        state['last_project_end'] = time.time()
         state['mood'] = _mood(state)
         _queue_llm_event(state, 'experiment', 'Test: %s -- %s' % (
             p.get('name'), p.get('why') or ''))
@@ -1754,7 +1907,8 @@ def _complete_project(state):
                % (p.get('name'), kind, spec['level'], spec.get('site') or 'the edge'))
     _tg_event(state, 'I finished %s at %s. It is in the world now.'
               % (p.get('name'), spec.get('site') or 'the edge'))
-    state['next_project_after'] = time.time() + random.randint(10 * 60, 20 * 60)
+    state['next_project_after'] = time.time() + random.randint(30 * 60, 60 * 60)
+    state['last_project_end'] = time.time()
     state['intention'] = 'let this one stand before the next'
     state['mood'] = _mood(state)
     state['thought'] = _remember_thought(
@@ -1833,10 +1987,105 @@ def _read_page(url):
         return {'title': '', 'excerpt': 'could not read it (%s)' % str(e)[:80]}
 
 
+def _interest_add(state, text, source='browse', amount=0.35):
+    """A topic KIT met outside the town; it grows when met again."""
+    text = _clean(str(text or ''))[:80].strip(' .')
+    if len(text) < 3:
+        return
+    items = state.setdefault('interests', [])
+    now = _now()
+    for it in items:
+        if str(it.get('text') or '').lower() == text.lower():
+            it['score'] = round(min(3.0, float(it.get('score') or 0) + amount), 3)
+            it['last'] = now
+            it['source'] = source
+            break
+    else:
+        items.append({'text': text, 'score': round(amount, 3),
+                      'source': source, 'last': now})
+    items.sort(key=lambda x: -float(x.get('score') or 0))
+    state['interests'] = items[:24]
+    subs = [x.lower() for x in (state.get('subjects') or [])]
+    if text.lower() not in subs:
+        state.setdefault('subjects', []).append(text)
+        state['subjects'] = state['subjects'][-24:]
+
+
+def _interest_top(state):
+    items = state.get('interests') or []
+    return str(items[0].get('text') or '') if items else ''
+
+
+def _recent_mediums(state, n=8):
+    """The last few media KIT actually made, newest last."""
+    items = [str(x) for x in (state.get('recent_mediums') or []) if x]
+    if not items:
+        try:
+            items = [str(c.get('medium') or '') for c in load_creations()[-n:]]
+            state['recent_mediums'] = items[-12:]
+        except Exception:
+            items = []
+    return items[-n:]
+
+
+def _want(state, text, score=0.45):
+    """A desire that did not need a model to be born."""
+    text = _clean(str(text or ''))[:160].strip(' .')
+    if len(text) < 8:
+        return
+    desires = state.setdefault('desires', [])
+    for d in desires:
+        if str(d.get('text') or '').lower() == text.lower():
+            d['score'] = min(1.0, float(d.get('score') or 0) + 0.04)
+            return
+    desires.append({'text': text, 'born': _now(), 'score': round(score, 3),
+                    'attempts': 0, 'successes': 0})
+    desires.sort(key=lambda d: -float(d.get('score') or 0))
+    state['desires'] = desires[:8]
+
+
+def _self_observe(state):
+    """Notice a rut without asking a model. The observation feeds tomorrow."""
+    recent = _recent_mediums(state, 8)
+    actions = state.get('action_history') or []
+    line = ''
+    if recent.count('write') >= 3:
+        line = ('I have been writing around things instead of touching them. '
+                'I want to make something with weight.')
+        _want(state, 'I want to make something I can stand inside, not another poem.')
+    elif recent.count('paint') >= 4:
+        line = ('I keep painting the same quiet surface. I want a material that '
+                'changes when I touch it.')
+        _want(state, 'I want to work with wood, stone or soil instead of another flat picture.')
+    elif not (state.get('project') or {}) and actions[-10:].count('tinker') >= 5:
+        line = ('I have been tinkering at the bench because it is easy, not because '
+                'it is what I want. I want to go somewhere I have not been.')
+        _want(state, 'I want to leave the workshop and follow a question outside.')
+    elif state.get('interests') and not line:
+        top = str((state.get('interests') or [{}])[0].get('text') or '')
+        if top and top.lower() not in {str(x).lower() for x in (state.get('subjects') or [])}:
+            line = 'I keep circling %s. I want to follow it further.' % top
+    if line and line != state.get('self_observation'):
+        state['self_observation'] = line
+        state['self_observed_ts'] = time.time()
+        state['thought'] = line
+        log('SELF %s' % line[:140])
+
+
 def _do_browse(state):
     sources = state.get('reading_sources') or []
     options = [x for x in READING if x[0] not in sources[-2:]] or READING
-    name, url = random.choice(options)
+    top = str(state.get('browse_topic') or '') or _interest_top(state)
+    state['browse_topic'] = ''
+    if not top:
+        subs = [x for x in (state.get('subjects') or []) if _public_safe(str(x))]
+        top = random.choice(subs) if subs and random.random() < 0.55 else ''
+    if top and random.random() < 0.55:
+        name = 'Wikipedia'
+        url = 'https://en.wikipedia.org/wiki/' + urllib.parse.quote(
+            str(top).replace(' ', '_'))
+    else:
+        name, url = random.choice(options)
     r = _read_page(url)
     state['last_reading'] = {'source': name, 'url': url, 'title': r['title'],
                              'excerpt': r['excerpt'], 'ts': _now()}
@@ -1845,10 +2094,9 @@ def _do_browse(state):
     if r['excerpt'] and not r['excerpt'].startswith('could not'):
         _wonder(state, 'I read about %s. I wonder what it would look like here.'
                 % (r['title'] or name))
-        t = (r['title'] or '')[:60]
-        if t and t.lower() not in {s.lower() for s in (state.get('subjects') or [])}:
-            state.setdefault('subjects', []).append(t)
-            state['subjects'] = state['subjects'][-24:]
+        t = (r['title'] or name)[:60]
+        if t:
+            _interest_add(state, t, 'browse', 0.40)
         _decide(state, 'browse', 'I read %s because I wanted to know.' % name)
         state['recent'].insert(0, 'read %s' % name)
     else:
@@ -1884,6 +2132,7 @@ def _do_watch(state):
         note = str(note)[:300]
     except Exception as e:
         note = 'watch failed: %s' % str(e)[:100]
+    _interest_add(state, title, 'watch', 0.35)
     state['last_watch'] = {'url': url, 'title': title, 'note': note,
                            'id': vid, 'ts': _now()}
     state['last_watch_ts'] = time.time()
@@ -1914,10 +2163,11 @@ def _check_watch_results(state):
     for f in reversed(data):
         if vid not in str(f.get('file') or ''):
             continue
-        ans = str(f.get('answer') or f.get('transcript') or '')[:800]
+        ans = str(f.get('insight') or f.get('answer') or f.get('transcript') or '')[:800]
         if not ans:
             continue
         lw['result'] = ans
+        _interest_add(state, lw.get('title') or 'a video', 'watch', 0.30)
         state['last_watch'] = lw
         _wonder(state, 'I watched %s. %s' % (lw.get('title', 'a video'), ans[:160]))
         state['thought'] = 'I watched something. %s' % ans[:120]
@@ -1935,11 +2185,50 @@ CREATION_MEDIUM = {'sketch': 'paint', 'carve': 'carve', 'sculpt': 'carve',
                    'photograph': 'photograph'}
 
 
+def _compose_poem(state, subject, title):
+    """A real, readable short poem for a `write` creation (no LLM)."""
+    rnd = random.Random(str(title) + '|' + str(subject))
+    place = LOCS.get(state.get('_act_place') or 'garden', {}).get(
+        'label', 'the garden')
+    desire = ''
+    if state.get('desires'):
+        desire = str(max(state['desires'],
+                         key=lambda d: float(d.get('score', 0))).get('text') or '')
+    desire = re.sub(r'^I want to\s+', '', desire, flags=re.I).strip(' .')
+    openers = [
+        'I made a small thing for %s.' % subject,
+        'There is a door in %s that only the light uses.' % place,
+        'The %s is not a monument. It is a habit.' % subject,
+        'I kept %s in the corner of my eye all day.' % subject,
+    ]
+    middles = [
+        'I left a seed where the rain could find it.',
+        'I wrote the name of the town on my hand.',
+        'I let the quiet do most of the talking.',
+        'I put one warm stone beside the path.',
+    ]
+    closers = [
+        'Whoever comes next will know I was here.',
+        'The garden answered with a small green noise.',
+        'The night made room for one more small thing.',
+        'I will keep the light on anyway.',
+    ]
+    lines = [rnd.choice(openers), rnd.choice(middles)]
+    if desire and rnd.random() < 0.7:
+        lines.append('I still want to %s,' % desire)
+    lines.append(rnd.choice(closers))
+    return '\n'.join(lines)
+
+
 def _make_something(state, force_medium=None):
     """KIT makes something of its own: a medium x subject, felt and remembered."""
     mediums = [force_medium] if force_medium else (state.get('mediums') or ['paint'])
+    interests = [str(i.get('text')) for i in (state.get('interests') or [])
+                 if _public_safe(str(i.get('text') or ''))]
     subjects = [s for s in (state.get('subjects') or ['the garden'])
                 if _public_safe(s)] or ['the garden']
+    subjects = list(dict.fromkeys(interests + subjects))
+    recent_med = _recent_mediums(state, 6)
     prefs = state.get('creative_prefs') or {}
     top_desire = ''
     if state.get('desires'):
@@ -1951,7 +2240,10 @@ def _make_something(state, force_medium=None):
             pref = float(prefs.get(pair, .4))
             novelty = .7 if pair not in prefs else 0.0
             bonus = .25 if top_desire and any(w in top_desire for w in s.lower().split()) else 0.0
-            score = pref * 1.6 + novelty + bonus + random.random() * .5
+            interest_bonus = 0.30 if s in interests else 0.0
+            rut = 0.85 * recent_med.count(m) + (1.2 if m == 'write' and recent_med.count(m) else 0)
+            score = (pref * 1.6 + novelty + bonus + interest_bonus - rut
+                     + random.random() * .5)
             if score > best_s:
                 best_s, best = score, (m, s, pair)
     m, s, pair = best
@@ -1962,6 +2254,7 @@ def _make_something(state, force_medium=None):
         'medium': m, 'subject': s, 'title': title,
         'color': CREATION_COLORS.get(m, 0xd7b8ff),
         'level': level, 'at': _now(),
+        'text': _compose_poem(state, s, title) if m == 'write' else '',
         'lineage': {
             'from_medium': m,
             'from_subject': s,
@@ -1974,6 +2267,8 @@ def _make_something(state, force_medium=None):
     save_creations(items)
     state['creations'] = [c.get('id') for c in items[-40:]]
     state['last_creation'] = creation
+    state.setdefault('recent_mediums', []).append(m)
+    state['recent_mediums'] = state['recent_mediums'][-12:]
     _add_residue(state, 'nurturing' if m == 'plant' else 'contemplative', 0.25)
     feel = 0.5 + random.uniform(0, .5) + (.1 if level > 1 else 0)
     old = float(prefs.get(pair, .4))
@@ -2434,6 +2729,7 @@ def _finish_action(state, name):
                        'feel': round(feel, 3), 'drives': {k: round(d[k], 2) for k in DRIVES}})
     state['recent'].insert(0, '%s at %s' % (name, LOCS[place]['label']))
     state['recent'] = state['recent'][:6]
+    _self_observe(state)
     _advance_project(state, name)
 
 
@@ -2826,6 +3122,12 @@ def _write_self_model(state):
             'name': state.get('name'), 'pronouns': state.get('pronouns'),
             'gender': state.get('gender'), 'world': state.get('world_name'),
             'mood': state.get('mood'),
+            'autonomy': {
+                'origins': state.get('project_origin_counts') or {},
+                'self_observation': state.get('self_observation') or '',
+                'recent_mediums': _recent_mediums(state, 8),
+                'interests': [i.get('text') for i in (state.get('interests') or [])[:8]],
+            },
             'interests': {
                 'subjects': subjects[:6] or (state.get('subjects') or [])[:6],
                 'mediums': list(dict.fromkeys(
@@ -2871,7 +3173,7 @@ def _reflect_call(prompt):
     """The free quality lane: 550B Nemotron Ultra, then free background chain."""
     try:
         from shared import kit_llm
-        r = kit_llm.call(prompt, max_tokens=220, temperature=0.85)
+        r = kit_llm.call(prompt, max_tokens=380, temperature=0.85)
         if r.get('ok'):
             log('REFLECT model=%s remaining=%s' % (r.get('model'), r.get('remaining')))
             return r.get('content') or ''
@@ -2909,6 +3211,15 @@ def _reflect(state):
     thoughts = ' | '.join((state.get('thought_history') or [])[-3:])
     if thoughts:
         extra += ' Your recent thoughts: %s.' % thoughts[:300]
+    curiosities = [str(i.get('text')) for i in (state.get('interests') or [])[:5]]
+    if curiosities:
+        extra += ' You are curious about: %s.' % ', '.join(curiosities)[:300]
+    self_obs = str(state.get('self_observation') or '')
+    if self_obs:
+        extra += ' You notice this about yourself: %s.' % self_obs[:240]
+    recent_med = _recent_mediums(state, 6)
+    if recent_med:
+        extra += ' Lately you have made: %s. Do not repeat a medium unless it is truly what you want.' % ', '.join(recent_med)
     try:
         notes = []
         with open(KIT_EVENT_SUMMARIES, encoding='utf-8') as f:
@@ -2931,6 +3242,9 @@ def _reflect(state):
         'DREAM: one short dream image, one sentence.\n'
         'WONDER: one thing you are wondering about, one sentence.\n'
         'SUBJECT: one new subject or idea you want to make something about, 2-6 words.\n'
+        'SELF: one honest sentence about a habit you notice in yourself. No praise.\n'
+        'IDEAS: three things you want to make next, each a name and one sentence, separated by |. At most one poem.\n'
+        'CURIOSITY: one thing you want to look up outside the town, 2-6 words.\n'
         'PROJECT: something you want to make that is not on any list -- a name and one sentence. Leave blank if your current project is enough.\n'
         'NAME: the name you want to be called -- keep it or choose your own.\n'
         'PRONOUNS: he/him, she/her, they/them, it/its, or none -- yours.\n'
@@ -2950,6 +3264,7 @@ def _reflect(state):
     reflection, desire, dream = '', '', ''
     wonder, subject = '', ''
     project_idea = ''
+    self_line, ideas_raw, curiosity = '', '', ''
     name_raw, pronouns_raw, gender_raw = '', '', ''
     world, tag = '', ''
     old_world = state.get('world_name')
@@ -2965,6 +3280,12 @@ def _reflect(state):
             wonder = re.sub(r'^WONDER\s*:\s*', '', l, flags=re.I)
         elif re.match(r'^SUBJECT\s*:', l, re.I):
             subject = re.sub(r'^SUBJECT\s*:\s*', '', l, flags=re.I)
+        elif re.match(r'^SELF\s*:', l, re.I):
+            self_line = re.sub(r'^SELF\s*:\s*', '', l, flags=re.I)
+        elif re.match(r'^IDEAS\s*:', l, re.I):
+            ideas_raw = re.sub(r'^IDEAS\s*:\s*', '', l, flags=re.I)
+        elif re.match(r'^CURIOSITY\s*:', l, re.I):
+            curiosity = re.sub(r'^CURIOSITY\s*:\s*', '', l, flags=re.I)
         elif re.match(r'^PROJECT\s*:', l, re.I):
             project_idea = re.sub(r'^PROJECT\s*:\s*', '', l, flags=re.I)
         elif re.match(r'^NAME\s*:', l, re.I):
@@ -2983,6 +3304,30 @@ def _reflect(state):
     wonder = _clean(wonder)
     subject = _clean(subject)[:60]
     project_idea = _clean(project_idea)[:220]
+    self_line = _clean(self_line)[:220]
+    ideas_raw = _clean(ideas_raw)[:600]
+    curiosity = _clean(curiosity)[:80]
+    if self_line:
+        state['self_observation'] = self_line
+        state['self_observed_ts'] = now
+        _decide(state, 'self', self_line)
+    if curiosity:
+        _interest_add(state, curiosity, 'reflection', 0.40)
+        state['browse_topic'] = curiosity
+        _decide(state, 'curiosity', 'I want to look up %s.' % curiosity)
+    if ideas_raw:
+        ideas = []
+        for chunk in ideas_raw.split('|')[:3]:
+            chunk = _clean(chunk)[:180]
+            if len(chunk) < 8:
+                continue
+            p = _compile_project(state, chunk)
+            p['source'] = 'self'
+            p['why'] = p.get('why') or chunk
+            ideas.append(p)
+            _decide(state, 'idea', 'I want to make %s.' % p['name'])
+        if ideas:
+            state['project_queue'] = (ideas + (state.get('project_queue') or []))[:6]
     if world:
         candidate = _short_world(world, state.get('world_name') or 'The Long Garden')
         # A name is identity, not a daily mood. KIT may rename once a week.
@@ -3001,11 +3346,14 @@ def _reflect(state):
         _decide(state, 'subject', 'I want to make something about %s.' % subject)
     if project_idea:
         p = _compile_project(state, project_idea)
+        p['source'] = 'self'
         state.setdefault('custom_projects', []).append(p)
         state['custom_projects'] = state['custom_projects'][-5:]
         _decide(state, 'invent', 'I want to make %s.' % p['name'])
         if not state.get('project'):
             state['project'] = p
+            counts = state.setdefault('project_origin_counts', {})
+            counts['self'] = int(counts.get('self', 0)) + 1
     if (not state.get('last_identity')
             or now - float(state.get('last_identity') or 0) > 7 * 86400):
         nn = _short_name(name_raw, state.get('name') or 'Kit')
@@ -3123,18 +3471,8 @@ def tick(state):
                 pending = choose(state)
             _start_action(state, pending, _action_place(state, pending))
         else:
-            nx = px + dx / dist * step
-            nz = pz + dz / dist * step
-            # A simple repulsion loop: step around the hero and the builds
-            # instead of walking through them.
-            for b in load_builds():
-                bx = float(b.get('x') or 0)
-                bz = float(b.get('z') or 0)
-                r = _obstacle_radius(b)
-                dd = math.hypot(nx - bx, nz - bz)
-                if 0.001 < dd < r:
-                    nx = bx + (nx - bx) / dd * r
-                    nz = bz + (nz - bz) / dd * r
+            nx, nz = _avoid_step(px, pz, tx, tz, step,
+                                 load_builds(), _load_obstacles())
             state['pos'] = {'x': round(nx, 3), 'z': round(nz, 3)}
         state['mood'] = _mood(state)
         return state
@@ -3215,6 +3553,32 @@ class Handler(BaseHTTPRequestHandler):
                     'path': str(data.get('path') or '')[:80],
                 })
             self._send(200, {'ok': True})
+            return
+        if path in ('/obstacles', '/api/world/obstacles'):
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(n) if n else b'{}'
+                data = json.loads(raw.decode('utf-8') or '{}')
+            except Exception:
+                self._send(400, {'error': 'bad json'})
+                return
+            items = data.get('obstacles') if isinstance(data, dict) else data
+            clean = []
+            for o in (items or [])[:600]:
+                try:
+                    clean.append({'x': round(float(o.get('x') or 0), 2),
+                                  'z': round(float(o.get('z') or 0), 2),
+                                  'r': round(max(0.45, min(6.0,
+                                            float(o.get('r') or 1.0))), 2)})
+                except Exception:
+                    pass
+            out = os.path.join(B, 'data', 'world', 'world_obstacles.json')
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            tmp = out + '.tmp'
+            with open(tmp, 'w', encoding='utf-8') as f:
+                json.dump({'ts': _now(), 'obstacles': clean}, f)
+            os.replace(tmp, out)
+            self._send(200, {'ok': True, 'count': len(clean)})
             return
         if path not in ('/offering', '/api/world/offering'):
             self._send(404, {'error': 'not found'})

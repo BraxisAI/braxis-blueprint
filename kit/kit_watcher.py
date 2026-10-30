@@ -30,6 +30,7 @@ REPLY = os.path.join(B, 'data', 'world', 'trio_replies.jsonl')
 REPORT = os.path.join(B, 'data', 'world', 'kit_watcher.json')
 WJOURNAL = os.path.join(B, 'data', 'world', 'kit_watcher_journal.md')
 BUILDS = os.path.join(B, 'data', 'world', 'world_builds.json')
+CREATIONS = os.path.join(B, 'data', 'world', 'world_creations.json')
 INPUTS = os.path.join(B, 'data', 'world', 'world_inputs.json')
 
 
@@ -120,6 +121,19 @@ def main():
     builds = _load(BUILDS, [])
     if not isinstance(builds, list):
         builds = []
+    creations = _load(CREATIONS, [])
+    if not isinstance(creations, list):
+        creations = []
+    recent_creations = creations[-12:]
+    recent_mediums = [str(c.get('medium') or '') for c in recent_creations]
+    medium_counts = {}
+    for m in recent_mediums:
+        if m:
+            medium_counts[m] = medium_counts.get(m, 0) + 1
+    top_medium, top_count = ('', 0)
+    if medium_counts:
+        top_medium, top_count = max(medium_counts.items(), key=lambda kv: kv[1])
+    tilt = top_medium if (top_count >= 5 or (len(recent_mediums) >= 8 and top_count >= 4)) else ''
     dream = ' '.join(str(st.get(k) or '') for k in ('dream', 'reflection'))
     try:
         dream += ' ' + open(JOURNAL, encoding='utf-8').read()[-2500:]
@@ -148,12 +162,24 @@ def main():
 
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     note = ''
+    actions = []
+    nudge_note = ''
+    if tilt:
+        nudge_note = (
+            'I read your last twelve things: %d were %s. That is a rut, not a '
+            'choice. Leave %s alone for a while and make something with weight.'
+            % (top_count, tilt, tilt))
+        _append(REPLY, {'ts': now, 'from': 'kit-watcher', 'to': 'kit',
+                        'kind': 'nudge', 'avoid_medium': tilt,
+                        'text': nudge_note})
+        actions.append('nudge:%s' % tilt)
     if gift:
         note = ('I read your dream about %s. I left the %s blueprint in your '
                 'workshop. Build it when you want; it is yours to use or leave.'
                 % ((dream.strip()[:90] or 'the city'), gift.replace('_', ' ')))
         _append(REPLY, {'ts': now, 'from': 'kit-watcher', 'to': 'kit',
                         'kind': 'gift', 'gift': 'blueprint:' + gift, 'text': note})
+        actions.append('gift:%s' % gift)
 
     stuck = False
     try:
@@ -194,6 +220,10 @@ def main():
         'gift': gift,
         'gift_reason': reason,
         'note': note,
+        'nudge': nudge_note,
+        'actions_taken': actions,
+        'recent_mediums': recent_mediums,
+        'nudge_medium': tilt,
         'stuck': stuck,
         'builds': len(builds),
         'last_build': builds[-1] if builds else None,
@@ -205,7 +235,8 @@ def main():
     with open(WJOURNAL, 'a', encoding='utf-8') as f:
         f.write('\n**%s** — %s\n' % (
             dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d %H:%M UTC'),
-            note or ('KIT is working on %s; no gift needed.' % project.get('name', 'its day'))))
+            ' | '.join(x for x in (note, nudge_note) if x)
+            or ('KIT is working on %s; no gift or nudge needed.' % project.get('name', 'its day'))))
     print(json.dumps(report, indent=1))
 
 

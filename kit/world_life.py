@@ -25,7 +25,6 @@ They are ported here as a small, deterministic loop, not an LLM per decision.
 """
 import datetime as dt
 import hashlib
-from concurrent.futures import ThreadPoolExecutor
 import json
 import math
 import os
@@ -50,6 +49,8 @@ REQUESTS = os.path.join(B, 'data', 'world', 'kit_asset_requests.jsonl')
 POSTS_LOG = os.path.join(B, 'data', 'world', 'kit_social_posts.jsonl')
 WORLD = 'https://braxisai.com/world/'
 SIGNALS = os.path.join(B, 'data', 'world', 'world_signals.jsonl')
+KIT_EVENTS = os.path.join(B, 'data', 'world', 'kit_llm_events.jsonl')
+KIT_EVENT_SUMMARIES = os.path.join(B, 'data', 'world', 'kit_event_summaries.jsonl')
 VISITS = os.path.join(B, 'data', 'world', 'world_visits.jsonl')
 SELF_MODEL_PATH = os.path.join(B, 'data', 'world', 'kit_self_model.json')
 WISHLIST_PATH = os.path.join(B, 'data', 'world', 'kit_wishlist.json')
@@ -550,6 +551,17 @@ def _append(path, obj):
             f.write(json.dumps(obj) + '\n')
     except Exception as e:
         log('append failed %s: %s' % (path, e))
+
+
+def _queue_llm_event(state, kind, text):
+    """Queue a high-value event for the free event summarizer; no LLM in tick."""
+    try:
+        os.makedirs(os.path.dirname(KIT_EVENTS), exist_ok=True)
+        with open(KIT_EVENTS, 'a', encoding='utf-8') as f:
+            f.write(json.dumps({'ts': _now(), 'kind': str(kind)[:40],
+                                'text': _clean(str(text or ''))[:400]}) + '\n')
+    except Exception as e:
+        log('event queue failed: %s' % str(e)[:100])
 
 
 def _add_residue(state, mood, amount=0.35):
@@ -1528,6 +1540,8 @@ def _record_signal(state, build, source, kind, text):
         if match is not None:
             match['successes'] = int(match.get('successes', 0)) + 1
             match['score'] = min(1.0, float(match.get('score', 0.5)) + 0.08)
+        _queue_llm_event(state, 'signal', '%s signal for %s: %s' % (
+            source, live.get('name'), sig['text']))
     state['signals_total'] = int(state.get('signals_total', 0)) + 1
     _add_residue(state, 'social', 0.45)
     state['last_signal'] = {'ts': sig['ts'], 'source': source,
@@ -1647,6 +1661,8 @@ def _complete_project(state):
         state['thought'] = 'I tested it. I know a little more than I did.'
         state['next_project_after'] = time.time() + random.randint(5 * 60, 10 * 60)
         state['mood'] = _mood(state)
+        _queue_llm_event(state, 'experiment', 'Test: %s -- %s' % (
+            p.get('name'), p.get('why') or ''))
         _write_wishlist(state)
         _write_self_model(state)
         log('EXPERIMENT done %s' % p.get('name'))
@@ -1672,6 +1688,8 @@ def _complete_project(state):
             p.get('why') or ''),
     })
     state['projects_done'] = state['projects_done'][-50:]
+    _queue_llm_event(state, 'project', 'I finished %s at %s. %s' % (
+        p.get('name'), spec.get('site') or 'the edge', p.get('why') or ''))
     state['recent'].insert(0, 'finished %s at %s' % (
         p.get('name'), spec.get('site') or 'the edge'))
     state['recent'] = state['recent'][:6]
@@ -2110,6 +2128,8 @@ def _consume_envision_requests(state):
     _append(MEM_PATH, {'ts': _now(), 'action': 'envision-built',
                        'place': site_label, 'build_id': spec['id'],
                        'text': text})
+    _queue_llm_event(state, 'envision', 'My request for %s became %s at %s.'
+                     % (text, name, site_label))
     log('ENVISION BUILD %s %s at %s' % (spec['id'], name, site_label))
     return spec
 
@@ -2820,32 +2840,17 @@ def _write_self_model(state):
 
 
 def _reflect_call(prompt):
-    """Local first, remote judgment as the fallback. The local lane can hang;
-    cap it at 45s and keep the loop moving."""
-    from shared.llm_router import call_llm
-    ex = None
+    """The free quality lane: 550B Nemotron Ultra, then free background chain."""
     try:
-        ex = ThreadPoolExecutor(max_workers=1)
-        fut = ex.submit(call_llm, prompt=prompt, model='ollama-lfm',
-                        task='judgment', max_tokens=180, temperature=0.85,
-                        fallback=False)
-        try:
-            r = fut.result(timeout=45)
-        except Exception:
-            r = None
-        text = r.get('content') if isinstance(r, dict) else str(r or '')
-        if text and str(text).strip():
-            log('REFLECT local ollama-lfm')
-            return str(text)
+        from shared import kit_llm
+        r = kit_llm.call(prompt, max_tokens=220, temperature=0.85)
+        if r.get('ok'):
+            log('REFLECT model=%s remaining=%s' % (r.get('model'), r.get('remaining')))
+            return r.get('content') or ''
+        log('REFLECT skipped: %s' % (r.get('error') or 'no content'))
     except Exception as e:
-        log('local reflection unavailable: %s' % str(e)[:100])
-    finally:
-        if ex is not None:
-            ex.shutdown(wait=False)
-    r = call_llm(task='judgment', prompt=prompt, max_tokens=180, temperature=0.85)
-    text = r.get('content') if isinstance(r, dict) else str(r or '')
-    log('REFLECT remote judgment')
-    return str(text or '')
+        log('reflection LLM failed: %s' % str(e)[:120])
+    return ''
 
 
 def _reflect(state):
@@ -2876,6 +2881,18 @@ def _reflect(state):
     thoughts = ' | '.join((state.get('thought_history') or [])[-3:])
     if thoughts:
         extra += ' Your recent thoughts: %s.' % thoughts[:300]
+    try:
+        notes = []
+        with open(KIT_EVENT_SUMMARIES, encoding='utf-8') as f:
+            for line in f.read().splitlines()[-4:]:
+                try:
+                    notes.append(str(json.loads(line).get('summary') or '')[:180])
+                except Exception:
+                    pass
+        if notes:
+            extra += ' Recent event notes: %s.' % ' | '.join(notes)[:500]
+    except Exception:
+        pass
     prompt = (
         'You are %s, a small garden-robot who lives in a world of your own. You are never '
         'given a task; you choose your own days and your own projects. Today you did: %s. '

@@ -23,8 +23,9 @@ still missing.
 - Actions are chosen by need + learned preference + project alignment +
   novelty + curiosity + repetition cost + day arc + action age.
 - Preferences are EMA-updated from how an action felt.
-- **One free-model call per day** for reflection, a new desire, a dream, a
-  wonder, a subject, and the world name/tagline. Everything else is local.
+- **Free-model budget:** one daily reflection plus up to 15 event summaries,
+  shared **16 calls/day** cap. The lead is the free OpenRouter 550B Nemotron
+  Ultra; the fallback is the free background chain. No model in the tick.
 - A separate `post` action lets KIT send at most one honest social update a day
   through the estate's determiner and publisher gates.
 
@@ -129,9 +130,10 @@ modules are in the private recovery archive.
 
 ## Stack / cost
 
-- No model in the tick; one free-model reflection per day. The `judgment` chain
-  currently uses free remote lanes; local-first `ollama-lfm` is not wired into
-  that chain (an honest limitation).
+- No model in the tick. KIT's lead is the **free OpenRouter 550B Nemotron
+  Ultra**; fallback is the free background chain. **16 autonomous calls/day**
+  shared by the reflection and event summaries; chat is on demand. Paid
+  OpenRouter lanes are reserved for Vesper/MAYA and never enter KIT's chain.
 - Procedural three.js/canvas art; a real image lane at most 1/day.
 - Existing ACE music lane at most 1 track/day.
 - Playwright + ffmpeg for clips; no model.
@@ -146,9 +148,10 @@ modules are in the private recovery archive.
   still low-poly procedural geometry.
 - The action list is authored; KIT selects and composes, it does not yet author
   new mechanics.
-- The daily reflection is a single free-model call; quality varies.
-- The local-first reflection is not wired; one remote free call/day is the
-  current behavior.
+- The daily reflection is one free-model call; quality varies.
+- The local 8B is too slow for a blocking lane (one success at 141s, two
+  timeouts); KIT uses the free remote 550B instead. TokenHarbor is configured
+  with `:free` models, not paid.
 - KIT cannot execute code, payments, or account changes from chat.
 
 ## Files

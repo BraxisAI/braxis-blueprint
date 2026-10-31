@@ -3438,6 +3438,16 @@ def _reflect(state):
     curiosities = [str(i.get('text')) for i in (state.get('interests') or [])[:5]]
     if curiosities:
         extra += ' You are curious about: %s.' % ', '.join(curiosities)[:300]
+    try:
+        import kit_memory as _km
+        _mq = ' '.join([str(i.get('text') or '') for i in (state.get('interests') or [])[:3]] +
+                        [str((state.get('project') or {}).get('name') or '')])
+        _mem = _km.search(_mq, 5)
+        if _mem:
+            extra += ' Memories that might matter: %s.' % ' | '.join(
+                '%s: %s' % (m.get('kind'), str(m.get('text'))[:180]) for m in _mem)[:700]
+    except Exception:
+        pass
     self_obs = str(state.get('self_observation') or '')
     if self_obs:
         extra += ' You notice this about yourself: %s.' % self_obs[:240]
@@ -3778,6 +3788,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {'ok': True, 'ts': _now()})
         elif path in ('/watcher', '/api/world/watcher'):
             self._send(200, _load_json(WATCHER_REPORT, {}))
+        elif path in ('/memory', '/api/world/memory'):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('q', [''])[0]
+            try:
+                import kit_memory as _km
+                rows = _km.search(q, 20) if q else _km.recent(12)
+            except Exception as e:
+                rows = []
+            self._send(200, {'query': q, 'memories': rows,
+                             'error': '' if rows else 'no memories yet'})
         elif path in ('/notes', '/api/world/notes'):
             rows = []
             try:

@@ -121,6 +121,10 @@ still missing.
 
 ## Autonomy and memory
 
+- **Episodic memory:** `kit_memory.py` builds a local SQLite FTS5 index of
+  decisions, projects, builds, creations, companion dialogue, watches, wonders
+  and field notes. The daily reflection searches it for relevant past moments;
+  the dashboard has a memory search box. No embeddings, no network, no LLM.
 - **Self-model:** `kit_self_model.json` records identity, interests, working-on,
   unfinished queue, enjoyed actions, failed decisions, changed beliefs, next
   intention, creation lineage and visitor impressions. It now also records
@@ -227,6 +231,8 @@ modules are in the private recovery archive.
   posts results to KIT.
 - `kit_poem.py` — free-writing poem worker; upgrades template poems.
 - `kit_study.py` — field-note worker: Wikipedia summary → free-model note.
+- `kit_memory.py` — local SQLite FTS5 episodic memory; used by reflection and
+  the dashboard search.
 - `dashboard.html` — the standalone `/kit/` dashboard.
 - `kit_chat.py` — Telegram conversation loop.
 - `kit_reset.py` — archive/reset; `--blank` for self-invented projects.

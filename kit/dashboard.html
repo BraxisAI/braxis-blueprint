@@ -44,7 +44,7 @@ audio{width:100%;height:28px;margin-top:5px}
 .row{display:flex;justify-content:space-between;gap:10px;border-top:1px solid rgba(215,184,255,.08);padding:6px 0;font-size:11px}.row:first-child{border-top:0}
 .row .l{color:var(--muted)}.row .r{text-align:right;color:#c8d2e0;max-width:62%;overflow-wrap:anywhere}
 .list{margin:0;padding-left:16px;color:#c8d2e0;font-size:11px}.list li{margin:4px 0}
-.note{border-top:1px solid rgba(215,184,255,.10);padding:9px 0}.note:first-child{border-top:0;padding-top:0}.note .title{color:var(--gold);font-weight:600;font-size:12px}
+.searchrow{display:flex;gap:7px;margin:0 0 8px}.searchrow input{flex:1;background:#0b0e16;border:1px solid var(--line);color:var(--ink);border-radius:999px;padding:7px 10px;font-size:11px;outline:none}.searchrow input:focus{border-color:var(--violet)}.mem{border-top:1px solid rgba(215,184,255,.10);padding:7px 0;font-size:11px}.mem:first-child{border-top:0}.mem .kind{color:var(--green);font-size:9px;letter-spacing:.08em;text-transform:uppercase;margin-right:5px}.note{border-top:1px solid rgba(215,184,255,.10);padding:9px 0}.note:first-child{border-top:0;padding-top:0}.note .title{color:var(--gold);font-weight:600;font-size:12px}
 .where code{font-size:10px;color:var(--gold);background:rgba(255,212,121,.07);padding:1px 4px;border-radius:3px}
 .err{border-color:rgba(255,123,123,.5);color:var(--red)}
 .artifact{cursor:pointer}.artifact:hover{background:rgba(255,255,255,.025);border-radius:8px}
@@ -115,6 +115,12 @@ audio{width:100%;height:28px;margin-top:5px}
   <section class="panel span2">
     <h2>field notes <span class="tiny muted" id="noteCount"></span></h2>
     <div id="notes"></div>
+  </section>
+
+  <section class="panel span2">
+    <h2>memory search</h2>
+    <div class="searchrow"><input id="memq" placeholder="search KIT's memories: trains, the lantern, Juniper…"><button id="memBtn" class="btn">search</button></div>
+    <div id="memResults"></div>
   </section>
 
   <section class="panel">
@@ -285,6 +291,22 @@ document.getElementById('artifacts').addEventListener('click', e => {
 $('modalClose').addEventListener('click', () => $('modal').classList.remove('open'));
 $('modal').addEventListener('click', e => { if (e.target === $('modal')) $('modal').classList.remove('open'); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('modal').classList.remove('open'); });
+
+async function memSearch(){
+  const q = ($('memq').value || '').trim();
+  try {
+    const d = await get('/api/world/memory' + (q ? '?q=' + encodeURIComponent(q) : ''));
+    const rows = d.memories || [];
+    $('memResults').innerHTML = rows.length ? rows.map(x =>
+      '<div class="mem"><span class="kind">'+esc(x.kind||'memory')+'</span>'+
+      esc(short(x.text||'',320))+' <span class="tiny muted">'+esc(fmt(x.ts))+'</span>'+
+      (x.ref && String(x.ref).startsWith('http')?' · <a href="'+esc(x.ref)+'" target="_blank" rel="noopener">source</a>':'')+
+      '</div>').join('') : '<div class="muted tiny">no memories yet</div>';
+  } catch(e) { $('memResults').innerHTML = '<div class="muted tiny">memory offline: '+esc(e.message)+'</div>'; }
+}
+$('memBtn').addEventListener('click', memSearch);
+$('memq').addEventListener('keydown', e => { if (e.key === 'Enter') memSearch(); });
+setTimeout(memSearch, 1200);
 
 async function get(url){ const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error(url+' '+r.status); return r.json(); }
 async function load(){

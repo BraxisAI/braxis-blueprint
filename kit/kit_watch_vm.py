@@ -65,6 +65,10 @@ def _watch_entry(path):
             text = (str(f.get('answer') or '').strip()
                     or str(f.get('insight') or '').strip()
                     or str(f.get('transcript') or '').strip())
+            if 'closest indexed moments are:' in text:
+                text = ('Indexed moments from the video:' +
+                        text.split('closest indexed moments are:', 1)[1]
+                        .split('If the answer should be visible', 1)[0].strip())
             if text:
                 return text[:1500]
     return ''

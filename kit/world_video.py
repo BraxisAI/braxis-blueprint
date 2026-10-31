@@ -22,6 +22,7 @@ import shutil
 import sqlite3
 import subprocess
 import tempfile
+import time
 import urllib.request
 import uuid
 
@@ -64,8 +65,22 @@ def capture():
             record_video_dir=tmp,
             record_video_size={'width': 1080, 'height': 1920})
         page = ctx.new_page()
-        page.goto(WORLD + '?video=1', wait_until='networkidle', timeout=60000)
-        page.wait_for_timeout(8000)
+        started = time.time()
+        page.goto(WORLD + '?video=1', wait_until='domcontentloaded', timeout=60000)
+        loaded_at = started
+        ready = False
+        try:
+            page.wait_for_function("() => { const e=document.getElementById('load'); return !e || getComputedStyle(e).display === 'none'; }", timeout=60000)
+            loaded_at = time.time()
+            ready = True
+        except Exception as e:
+            print('load gate timeout:', str(e)[:120])
+        if not ready:
+            print('world never finished loading; refusing to queue a loading-screen clip')
+            ctx.close()
+            b.close()
+            shutil.rmtree(tmp, ignore_errors=True)
+            return None
         page.wait_for_timeout(15000)
         ctx.close()
         b.close()
@@ -78,7 +93,12 @@ def capture():
     kits = sorted(glob.glob(os.path.join(
         B, 'data', 'songs', 'Braxis_Songs', 'Kit', '*.mp3')), key=os.path.getmtime)
     LAST_AUDIO = kits[-1] if kits else ''
-    cmd = ['ffmpeg', '-y', '-i', src[0]]
+    trim = max(0.0, loaded_at - started - 0.5)
+    print('trim before world:', round(trim, 2), 's')
+    cmd = ['ffmpeg', '-y']
+    if trim > 0:
+        cmd += ['-ss', '%.2f' % trim]
+    cmd += ['-i', src[0]]
     if LAST_AUDIO:
         cmd += ['-i', LAST_AUDIO]
     cmd += ['-vf', 'scale=1080:1920', '-c:v', 'libx264', '-pix_fmt', 'yuv420p']
@@ -91,6 +111,9 @@ def capture():
     shutil.rmtree(tmp, ignore_errors=True)
     if r.returncode != 0 or not os.path.exists(out):
         print('ffmpeg failed:', r.stderr[-300:])
+        return None
+    if os.path.getsize(out) < 100000:
+        print('video too small / likely loading frame:', os.path.getsize(out))
         return None
     return out
 

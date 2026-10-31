@@ -2019,9 +2019,19 @@ def _read_page(url):
         return {'title': '', 'excerpt': 'could not read it (%s)' % str(e)[:80]}
 
 
+def _clean_topic(text):
+    """Store a topic, not a page title or a video headline."""
+    t = _clean(str(text or ''))
+    t = re.sub(r'\s*[·|–—-]\s*(Wikipedia|GitHub|YouTube|TikTok|Hacker News|arXiv|Guardian).*$',
+               '', t, flags=re.I)
+    t = re.sub(r'\s*\([^)]*\)\s*$', '', t)
+    t = re.sub(r'\s+', ' ', t).strip(' .')
+    return t[:70]
+
+
 def _interest_add(state, text, source='browse', amount=0.35):
     """A topic KIT met outside the town; it grows when met again."""
-    text = _clean(str(text or ''))[:80].strip(' .')
+    text = _clean_topic(text)[:80].strip(' .')
     if len(text) < 3:
         return
     items = state.setdefault('interests', [])
@@ -2164,7 +2174,6 @@ def _do_watch(state):
         note = str(note)[:300]
     except Exception as e:
         note = 'watch failed: %s' % str(e)[:100]
-    _interest_add(state, title, 'watch', 0.35)
     state['last_watch'] = {'url': url, 'title': title, 'note': note,
                            'id': vid, 'ts': _now()}
     state['last_watch_ts'] = time.time()
@@ -2199,7 +2208,6 @@ def _check_watch_results(state):
         if not ans:
             continue
         lw['result'] = ans
-        _interest_add(state, lw.get('title') or 'a video', 'watch', 0.30)
         state['last_watch'] = lw
         _wonder(state, 'I watched %s. %s' % (lw.get('title', 'a video'), ans[:160]))
         state['thought'] = 'I watched something. %s' % ans[:120]
@@ -3971,7 +3979,6 @@ class Handler(BaseHTTPRequestHandler):
                     st['last_watch_ts'] = time.time()
                     st['thought'] = 'I watched %s. %s' % (title, result[:140])
                     _wonder(st, 'I watched %s. %s' % (title, result[:160]))
-                _interest_add(st, title, 'watch', 0.45)
                 save_state(st)
             self._send(200, {'ok': True, 'id': vid})
             return

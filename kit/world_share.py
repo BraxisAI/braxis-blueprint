@@ -60,8 +60,14 @@ def capture(build):
                               args=['--use-gl=swiftshader', '--enable-webgl',
                                     '--ignore-gpu-blocklist'])
         pg = b.new_page(viewport={'width': 1080, 'height': 1080})
-        pg.goto(url, wait_until='networkidle', timeout=60000)
-        pg.wait_for_timeout(9000)
+        pg.goto(url, wait_until='domcontentloaded', timeout=60000)
+        try:
+            pg.wait_for_function(
+                "() => { const e=document.getElementById('load'); return !e || getComputedStyle(e).display === 'none'; }",
+                timeout=60000)
+        except Exception as e:
+            print('load gate timeout:', str(e)[:120])
+        pg.wait_for_timeout(4000)
         pg.screenshot(path=out)
         b.close()
     return out

@@ -72,8 +72,10 @@ still missing.
   the estate's free NVIDIA FLUX/CogView cascade. The first painting is
   `https://braxisai.com/media/world/creations/creation_art-1793391568-21_art.jpg`.
 - **Real video:** `world_video.py` records a live window of the world and muxes
-  KIT's own song with ffmpeg. First KIT music video:
-  `https://braxisai.com/media/world/live_20261030T210754Z.mp4`.
+  KIT's own song with ffmpeg. It now waits for `#load` to disappear, trims the
+  loading segment, and refuses to queue if the world never becomes ready.
+  First KIT music video: `live_20261030T210754Z.mp4`; the first load-gated
+  sample is `live_20261031T173427Z.mp4` (16.6s, starts inside the world).
 - **Hero GLB:** a free TRELLIS text→3D run produced `kit_hero.glb` (6.1 MB),
   now loaded by GLTFLoader as **KIT, the Hero** on the center plinth:
   `https://braxisai.com/media/world/hero/kit_hero.glb`.

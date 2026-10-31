@@ -292,7 +292,8 @@ def main():
             print('daily creation-share cap reached (2)')
             return 0
         fresh = [x for x in creations
-                 if x.get('id') not in shared and int(x.get('level') or 0) >= 3]
+                 if x.get('id') not in shared and int(x.get('level') or 0) >= 3
+                 and (x.get('image_url') or x.get('audio_url') or x.get('text'))]
         if not fresh:
             print('nothing new to share')
             return 0
@@ -302,9 +303,17 @@ def main():
         return 1
 
     print('creation:', c.get('id'), '|', c.get('title'), '| level', c.get('level'))
-    card = make_card(c, state)
-    print('card:', card, os.path.getsize(card), 'bytes')
-    url = PUBLIC + os.path.basename(card)
+    if not (c.get('image_url') or c.get('audio_url') or c.get('text')):
+        print('refusing card-only creation; wait for a real artifact')
+        return 0
+    card = None
+    if c.get('image_url'):
+        url = c['image_url']
+        print('using real image:', url)
+    else:
+        card = make_card(c, state)
+        print('card:', card, os.path.getsize(card), 'bytes')
+        url = PUBLIC + os.path.basename(card)
     if a.dry:
         print('image url:', url)
         print('caption:', _caption(c, state))
@@ -320,7 +329,7 @@ def main():
         return 1
 
     pod_url = ''
-    if a.pod:
+    if a.pod and card:
         _pid, pod_url = _create_pod(c, card)
     ids, plan, cap = _queue(c, url, state, pod_url)
     shared.add(c.get('id'))

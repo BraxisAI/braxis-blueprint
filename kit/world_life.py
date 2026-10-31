@@ -394,6 +394,10 @@ def _default_state():
         'companion_dialog': [],
         'recent_mediums': [],
         'self_observation': '',
+        'emotions': {},
+        'emotions_ts': 0.0,
+        'emotion_mood': '',
+        'emotion_top': [],
         'self_observed_ts': 0.0,
         'last_project_end': 0.0,
         'project_origin_counts': {},
@@ -1757,6 +1761,7 @@ def _record_signal(state, build, source, kind, text):
         _queue_llm_event(state, 'signal', '%s signal for %s: %s' % (
             source, live.get('name'), sig['text']))
     state['signals_total'] = int(state.get('signals_total', 0)) + 1
+    _feel_emotion(state, event='signal')
     _add_residue(state, 'social', 0.45)
     state['last_signal'] = {'ts': sig['ts'], 'source': source,
                             'kind': sig['kind'], 'text': sig['text'],
@@ -2088,6 +2093,14 @@ def _want(state, text, score=0.45):
     state['desires'] = desires[:8]
 
 
+def _feel_emotion(state, action='', event=''):
+    try:
+        import kit_emotion
+        kit_emotion.update_emotions(state, action=action, event=event)
+    except Exception:
+        pass
+
+
 def _self_observe(state):
     """Notice a rut without asking a model. The observation feeds tomorrow."""
     recent = _recent_mediums(state, 8)
@@ -2116,6 +2129,62 @@ def _self_observe(state):
         log('SELF %s' % line[:140])
 
 
+def _search_web(topic, timeout=15):
+    # Search free public indexes for a real page about the topic.
+    q = urllib.parse.quote(str(topic or '').strip())
+    if not q:
+        return None
+    candidates = []
+    try:
+        req = urllib.request.Request(
+            'https://en.wikipedia.org/w/api.php?action=query&list=search'
+            '&srsearch=%s&format=json&srlimit=3' % q,
+            headers={'User-Agent': UA})
+        d = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode())
+        for hit in ((d.get('query') or {}).get('search') or [])[:2]:
+            title = hit.get('title') or ''
+            if title:
+                candidates.append(('Wikipedia search',
+                                   'https://en.wikipedia.org/wiki/' +
+                                   urllib.parse.quote(title.replace(' ', '_'))))
+    except Exception:
+        pass
+    try:
+        req = urllib.request.Request(
+            'https://hn.algolia.com/api/v1/search?query=%s&tags=story&hitsPerPage=3' % q,
+            headers={'User-Agent': UA})
+        d = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode())
+        for hit in (d.get('hits') or [])[:2]:
+            url = hit.get('url') or ('https://news.ycombinator.com/item?id=' +
+                                     str(hit.get('objectID') or ''))
+            if url:
+                candidates.append(('Hacker News search', url))
+    except Exception:
+        pass
+    try:
+        req = urllib.request.Request(
+            'https://api.github.com/search/repositories?q=%s&sort=stars&per_page=3' % q,
+            headers={'User-Agent': UA})
+        d = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode())
+        for hit in (d.get('items') or [])[:2]:
+            if hit.get('html_url'):
+                candidates.append(('GitHub search', hit['html_url']))
+    except Exception:
+        pass
+    try:
+        req = urllib.request.Request(
+            'http://export.arxiv.org/api/query?search_query=all:%s&max_results=3' % q,
+            headers={'User-Agent': UA})
+        raw = urllib.request.urlopen(req, timeout=timeout).read().decode('utf-8', 'ignore')
+        for m in re.finditer(r'<id>(https?://arxiv\.org/abs/[^<]+)</id>', raw):
+            candidates.append(('arXiv search', m.group(1)))
+            if len(candidates) > 5:
+                break
+    except Exception:
+        pass
+    return random.choice(candidates) if candidates else None
+
+
 def _do_browse(state):
     sources = state.get('reading_sources') or []
     options = [x for x in READING if x[0] not in sources[-2:]] or READING
@@ -2124,7 +2193,12 @@ def _do_browse(state):
     if not top:
         subs = [x for x in (state.get('subjects') or []) if _public_safe(str(x))]
         top = random.choice(subs) if subs and random.random() < 0.55 else ''
-    if top and random.random() < 0.55:
+    found = None
+    if top and random.random() < 0.78:
+        found = _search_web(top)
+    if found:
+        name, url = found
+    elif top and random.random() < 0.35:
         name = 'Wikipedia'
         url = 'https://en.wikipedia.org/wiki/' + urllib.parse.quote(
             str(top).replace(' ', '_'))
@@ -2698,6 +2772,7 @@ def _talk_companion(state):
     c['bond'] = round(min(1.0, float(c.get('bond') or 0) + 0.03), 3)
     c['mood'] = random.choice(['curious', 'warm', 'sleepy', 'bright'])
     state['companion'] = c
+    _feel_emotion(state, event='companion')
     dialog = state.setdefault('companion_dialog', [])
     dialog.append({'ts': _now(), 'kit': kline, 'juniper': jline})
     state['companion_dialog'] = dialog[-30:]
@@ -2981,6 +3056,7 @@ def _finish_action(state, name):
     state['recent'].insert(0, '%s at %s' % (name, LOCS[place]['label']))
     state['recent'] = state['recent'][:6]
     _self_observe(state)
+    _feel_emotion(state, action=name)
     _advance_practice(state, name)
     _advance_project(state, name)
 
@@ -3118,6 +3194,7 @@ def _apply_offers(state):
             ])
         _append(OFFER_LOG, {'ts': _now(), 'kind': kind, 'text': text,
                             'ip_hash': fid})
+        _feel_emotion(state, event='visitor')
         _append(EXTERNAL_LOG, {'ts': _now(), 'source': 'visitor',
                                'kind': kind, 'text': text, 'ip_hash': fid})
         log('OFFER %s %s' % (kind, text[:80]))
@@ -3377,6 +3454,8 @@ def _write_self_model(state):
             'gender': state.get('gender'), 'world': state.get('world_name'),
             'mood': state.get('mood'),
             'companion': state.get('companion'),
+            'emotion': {'mood': state.get('emotion_mood'),
+                        'top': state.get('emotion_top')},
             'practice': state.get('practice'),
             'practices_done': [p.get('name') for p in (state.get('practice_history') or [])[-5:]],
             'autonomy': {
@@ -3481,6 +3560,10 @@ def _reflect(state):
                 '%s: %s' % (m.get('kind'), str(m.get('text'))[:180]) for m in _mem)[:700]
     except Exception:
         pass
+    if state.get('emotion_top'):
+        extra += ' Your emotional weather: %s.' % ', '.join(
+            '%s %.2f' % (e.get('name'), float(e.get('value') or 0))
+            for e in state['emotion_top'][:3])
     self_obs = str(state.get('self_observation') or '')
     if self_obs:
         extra += ' You notice this about yourself: %s.' % self_obs[:240]

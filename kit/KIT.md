@@ -108,6 +108,9 @@ still missing.
   badge, the builds, last read/watch results, and the watcher nudge. Click any
   artifact for a full detail view and a **make a real image**, **make the song**
   or **rewrite as a real poem** button. It refreshes every 15 seconds.
+- **Approval gate:** `world_creation_share.py` now refuses a card-only
+  creation. It shares the real image if one exists, a poem/audio card if that
+  is the artifact, and waits rather than posting a blank interpretation.
 - **Real poems:** `kit_poem.py` replaces the deterministic placeholders with
   9–13 line free-model poems and runs hourly. It deliberately excludes watched
   video titles and real names.
@@ -127,6 +130,14 @@ still missing.
 
 ## Autonomy and memory
 
+- **30-dimensional emotion:** `kit_emotion.py` keeps joy, sadness, anger, fear,
+  surprise, trust, anticipation, calm, anxiety, hope, melancholy, defiance,
+  vulnerability, playfulness, introspection, euphoria, grief, longing,
+  gratitude, curiosity, awe, nostalgia, determination, acceptance,
+  ambivalence, remorse, pride, shame, connectedness and loneliness. Actions
+  and events pulse them, a 6-hour-ish decay pulls them toward baseline, and
+  opposites interlock. The HUD/dashboard show the top three/five. It is a
+  feeling model, not a claim of consciousness.
 - **Episodic memory:** `kit_memory.py` builds a local SQLite FTS5 index of
   decisions, projects, builds, creations, companion dialogue, watches, wonders
   and field notes. The daily reflection searches it for relevant past moments;
@@ -237,6 +248,7 @@ modules are in the private recovery archive.
   posts results to KIT.
 - `kit_poem.py` — free-writing poem worker; upgrades template poems.
 - `kit_study.py` — field-note worker: Wikipedia summary → free-model note.
+- `kit_emotion.py` — 30-dimensional emotion state, decay and interlocks.
 - `kit_memory.py` — local SQLite FTS5 episodic memory; used by reflection and
   the dashboard search.
 - `dashboard.html` — the standalone `/kit/` dashboard.

@@ -99,6 +99,7 @@ audio{width:100%;height:28px;margin-top:5px}
     <div class="row"><span class="l">companion</span><span class="r" id="companion"></span></div>
     <div class="row"><span class="l">last exchange</span><span class="r" id="companionDialog"></span></div>
     <div class="row"><span class="l">ritual</span><span class="r" id="practice"></span></div>
+    <div class="row"><span class="l">emotional weather</span><span class="r" id="emotion"></span></div>
     <div class="row"><span class="l">page visits</span><span class="r" id="visits"></span></div>
     <div class="row"><span class="l">project origins</span><span class="r" id="origins"></span></div>
     <div class="row"><span class="l">recent mediums</span><span class="r" id="mediums"></span></div>
@@ -185,6 +186,7 @@ function render(s, c, b, w, S, N) {
   $('companion').innerHTML = comp ? ('<span class="chip self">'+esc(comp.name||'friend')+' the '+esc(String(comp.kind||'companion').replace(/-/g,' '))+'</span> <span class="tiny muted">bond '+esc(comp.bond||0)+'</span>' + (comp.last_words ? '<div class="tiny">"'+esc(comp.last_words)+'"</div>' : '')) : '<span class="muted">none yet</span>';
   const lastTalk = (s.companion_dialog || []).slice(-1)[0];
   $('companionDialog').innerHTML = lastTalk ? ('<div class="tiny">Kit: "'+esc(lastTalk.kit)+'"</div><div class="tiny">'+esc(comp && comp.name || 'Juniper')+': "'+esc(lastTalk.juniper)+'"</div>') : '<span class="muted">no exchange yet</span>';
+  $('emotion').innerHTML = (s.emotion_top || []).slice(0,5).map(e => '<span class="chip">'+esc(e.name)+' '+esc(e.value)+'</span>').join(' ') || '<span class="muted">no reading yet</span>';
   const pr = s.practice;
   const done = (s.practice_history || []).slice(-1)[0];
   $('practice').innerHTML = pr

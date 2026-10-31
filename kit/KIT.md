@@ -86,6 +86,22 @@ still missing.
   desires, wonders, the dream, visitor messages, queued ideas, next projects and
   envision requests, plus the capability gaps and their unblock.
 
+## Companion and dashboard
+
+- **Juniper, the first companion.** KIT has a `befriend` action. On
+  2026-10-31 00:11 UTC it made **Juniper the moss-cat** (`comp-1793405460`,
+  bond 0.12). The 3D page renders a small four-legged companion that follows
+  KIT; the HUD and dashboard show its name and bond. This is a pet with simple
+  page behavior, not a second autonomous agent.
+- **Dashboard:** https://braxisai.com/kit/ shows live state, the project step,
+  self-observation, companion, project origins, interests, every recent
+  creation with an honest `image` / `audio` / `poem` / `card only` badge, the
+  builds, last read/watch results, and the watcher nudge. It refreshes every
+  15 seconds from the world API.
+- **Project steps:** `progress / target` is the number of matching actions,
+  not a quality score. The HUD now says **step X of Y**; future projects use
+  3–5 steps.
+
 ## Autonomy and memory
 
 - **Self-model:** `kit_self_model.json` records identity, interests, working-on,
@@ -170,9 +186,11 @@ modules are in the private recovery archive.
   autonomy, not consciousness or independence.
 - The daily reflection is one free-model call; quality varies. It writes the
   self-authored project queue and curiosity target.
-- Browsing is real page reading. Watching is queued through the estate watch
-  chain; the first KIT watch has not landed yet, so the live world should not
-  claim a watched video.
+- Browsing is real page reading. Watching now works: the VM fetches TikTok with
+  yt-dlp and the local watch-skill, and watches a PC-fetched YouTube file.
+  KIT has real results for *How Janas runs big AI models on small laptops* and
+  *Someone Just Rebuilt Adobe for Free*. YouTube cannot be fetched from the VM
+  (bot wall); the PC residential IP is required for that leg.
 - The local 8B is too slow for a blocking lane (one success at 141s, two
   timeouts); KIT uses the free remote 550B instead. TokenHarbor is configured
   with `:free` models, not paid.
@@ -187,7 +205,10 @@ modules are in the private recovery archive.
 - `kit_diary.py` — daily diary post.
 - `world_video.py` — live world clip, optionally muxed with KIT's song.
 - `world_share.py` — build capture and determiner routing.
-- `kit_watcher.py` — the dreamkeeper.
+- `kit_watcher.py` — the dreamkeeper and medium-rut auditor.
+- `kit_watch_vm.py` — VM watch worker: TikTok via yt-dlp, local watch-skill,
+  posts results to KIT.
+- `dashboard.html` — the standalone `/kit/` dashboard.
 - `kit_chat.py` — Telegram conversation loop.
 - `kit_reset.py` — archive/reset; `--blank` for self-invented projects.
 

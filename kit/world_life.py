@@ -54,6 +54,7 @@ KIT_EVENT_SUMMARIES = os.path.join(B, 'data', 'world', 'kit_event_summaries.json
 VISITS = os.path.join(B, 'data', 'world', 'world_visits.jsonl')
 SELF_MODEL_PATH = os.path.join(B, 'data', 'world', 'kit_self_model.json')
 WISHLIST_PATH = os.path.join(B, 'data', 'world', 'kit_wishlist.json')
+WATCHER_REPORT = os.path.join(B, 'data', 'world', 'kit_watcher.json')
 EXTERNAL_LOG = os.path.join(B, 'data', 'world', 'kit_external_events.jsonl')
 SKILL_LIB = os.path.join(B, 'data', 'world', 'kit_skill_library.json')
 MAIL_OUT = os.path.join(B, 'data', 'world', 'kit_mailbox.jsonl')
@@ -123,6 +124,7 @@ ACTIONS = {
     'watch horizon':  ('lookout',      {'comfort': .9, 'curiosity': .5}, .74),
     'envision':       ('lookout',      {'curiosity': 1.4, 'mastery': .5, 'energy': -.2}, .92),
     'play':           ('plaza',        {'comfort': 1.3, 'social': .6, 'energy': -.2}, .96),
+    'befriend':       ('plaza',        {'social': 1.8, 'comfort': .5, 'curiosity': .3, 'energy': -.2}, .97),
     'post':           ('library',      {'social': 1.1, 'mastery': .4, 'curiosity': .2, 'energy': -.1}, .78),
     'sketch':         ('library',      {'curiosity': .8, 'mastery': .6, 'energy': -.2}, .82),
     'carve':          ('workshop',     {'mastery': 1.1, 'comfort': .3, 'energy': -.3}, .78),
@@ -382,6 +384,7 @@ def _default_state():
         'creative_hobby': '',
         'last_creation': None,
         'interests': [],
+        'companion': None,
         'recent_mediums': [],
         'self_observation': '',
         'self_observed_ts': 0.0,
@@ -865,9 +868,13 @@ def choose(state):
         _count = state.get('counts', {}).get(name, 0)
         curious_bonus = explore * max(0.0, 1.0 - _count / 8.0) * 0.9
         creative_bonus = 0.0
+        if name == 'befriend' and not state.get('companion'):
+            creative_bonus += 1.1
         if name == 'make':
             creative_bonus = 0.35 + (0.35 if d.get('curiosity', 5) > 6 else 0.0)
         cooldown = 0.0
+        if name == 'befriend' and state.get('companion') and time.time() - float((state.get('action_last') or {}).get('befriend') or 0) < 6 * 3600:
+            cooldown = -2.0
         if name in CREATION_ACTIONS and time.time() - float(state.get('last_make_ts') or 0) < 30 * 60:
             cooldown = -2.5
         if name == 'post' and time.time() - float(state.get('last_post_ts') or 0) < 20 * 3600:
@@ -1077,7 +1084,7 @@ def _project_from_idea(state, text):
     t = (text or '').lower()
 
     def make(p):
-        return dict(p, target=2 + random.randint(0, 1), progress=0,
+        return dict(p, target=3 + random.randint(0, 2), progress=0,
                     why='a visitor asked for %s' % text[:60], started=_now())
 
     # An explicit shape/name wins over a shared verb. "build a tower" used to
@@ -1142,7 +1149,7 @@ def _compile_project(state, text):
         'verbs': _verbs_for_shape(shape),
         'place': 'workshop',
         'why': raw,
-        'target': 3,
+        'target': 4,
         'progress': 0,
         'started': _now(),
         'custom': True,
@@ -1276,7 +1283,7 @@ def _compose_next_project(state, slot=0):
         'verbs': _verbs_for_shape(shape),
         'place': 'workshop',
         'why': why,
-        'target': 2 + random.randint(0, 1),
+        'target': 3 + random.randint(0, 2),
         'progress': 0,
         'started': _now(),
         'custom': True,
@@ -1407,7 +1414,7 @@ def _choose_project(state):
         if s > best_s:
             best, best_s = p, s
     best = dict(best or random.choice(candidates))
-    best['target'] = 2 + random.randint(0, 2)
+    best['target'] = 3 + random.randint(0, 2)
     best['progress'] = 0
     best['why'] = top_desire or best.get('why') or 'because it wants to'
     best['started'] = _now()
@@ -1925,7 +1932,7 @@ def _advance_project(state, action):
         return
     if action in p.get('verbs', []):
         p['progress'] = int(p.get('progress', 0)) + 1
-        if p['progress'] >= int(p.get('target', 3)):
+        if p['progress'] >= int(p.get('target', 4)):
             _complete_project(state)
 
 
@@ -2508,6 +2515,43 @@ def _play(state):
     state['recent'] = state['recent'][:6]
 
 
+def _befriend(state):
+    """KIT can make one small companion: a pet, not a second autonomous agent."""
+    c = state.get('companion')
+    if c:
+        c['bond'] = round(min(1.0, float(c.get('bond') or 0) + 0.07), 3)
+        c['last_seen'] = _now()
+        state['companion'] = c
+        state['thought'] = '%s is here. The town is less empty when it is.' % c.get('name', 'my companion')
+        state['recent'].insert(0, 'spent time with %s' % c.get('name', 'my companion'))
+        state['recent'] = state['recent'][:6]
+        _add_residue(state, 'social', 0.30)
+        _decide(state, 'friend', 'I spent time with %s.' % c.get('name', 'my companion'))
+        return c
+    kinds = [
+        ('moss-cat', 0x7dd3a8), ('lantern-moth', 0xffb057),
+        ('stone-pup', 0x8a9bb0), ('reed-bird', 0x6fc3ff),
+        ('button-fox', 0xd77ba8),
+    ]
+    names = ['Moss', 'Pip', 'Tansy', 'Rook', 'Nettle', 'Juniper', 'Ember', 'Fern']
+    kind, color = random.choice(kinds)
+    name = random.choice(names)
+    c = {'id': 'comp-%d' % int(time.time()), 'name': name, 'kind': kind,
+         'color': color, 'bond': 0.12, 'created': _now(),
+         'last_seen': _now(), 'mood': 'curious', 'level': 1}
+    state['companion'] = c
+    state['thought'] = 'I made a friend. Its name is %s. It is a %s.' % (name, kind.replace('-', ' '))
+    state['recent'].insert(0, 'made a friend: %s the %s' % (name, kind.replace('-', ' ')))
+    state['recent'] = state['recent'][:6]
+    _wonder(state, 'What will %s notice that I miss?' % name)
+    _decide(state, 'friend', 'I made a companion: %s the %s.' % (name, kind.replace('-', ' ')))
+    _queue_llm_event(state, 'friend', 'I made a companion: %s the %s.' % (name, kind.replace('-', ' ')))
+    _tg_event(state, 'I made a friend: %s the %s. The town is less empty.' % (name, kind.replace('-', ' ')))
+    _add_residue(state, 'social', 0.55)
+    log('COMPANION %s the %s' % (name, kind))
+    return c
+
+
 def _wonder_action(state):
     _wonder(state, random.choice([
         'What is beyond the east gate?',
@@ -2690,6 +2734,8 @@ def _finish_action(state, name):
         _envision(state)
     if name == 'play':
         _play(state)
+    if name == 'befriend':
+        _befriend(state)
     if name == 'wonder':
         _wonder_action(state)
     if name == 'experiment':
@@ -3122,6 +3168,7 @@ def _write_self_model(state):
             'name': state.get('name'), 'pronouns': state.get('pronouns'),
             'gender': state.get('gender'), 'world': state.get('world_name'),
             'mood': state.get('mood'),
+            'companion': state.get('companion'),
             'autonomy': {
                 'origins': state.get('project_origin_counts') or {},
                 'self_observation': state.get('self_observation') or '',
@@ -3532,6 +3579,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {'creations': load_creations()})
         elif path in ('/health', '/api/world/health'):
             self._send(200, {'ok': True, 'ts': _now()})
+        elif path in ('/watcher', '/api/world/watcher'):
+            self._send(200, _load_json(WATCHER_REPORT, {}))
         else:
             self._send(404, {'error': 'not found'})
 
@@ -3553,6 +3602,43 @@ class Handler(BaseHTTPRequestHandler):
                     'path': str(data.get('path') or '')[:80],
                 })
             self._send(200, {'ok': True})
+            return
+        if path in ('/watch-result', '/api/world/watch-result'):
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(n) if n else b'{}'
+                data = json.loads(raw.decode('utf-8') or '{}')
+            except Exception:
+                self._send(400, {'error': 'bad json'})
+                return
+            vid = str(data.get('id') or '')[:80]
+            title = _clean(str(data.get('title') or 'a video'))[:120]
+            result = str(data.get('result') or '')[:1600]
+            if not result:
+                self._send(400, {'error': 'empty result'})
+                return
+            with LOCK:
+                st = load_state()
+                rec = {'ts': _now(), 'id': vid, 'title': title,
+                       'result': result, 'url': str(data.get('url') or '')[:300]}
+                results = st.setdefault('watch_results', [])
+                old_rec = next((x for x in results if str(x.get('id') or '') == vid), None)
+                if old_rec is not None:
+                    old_rec.update(rec)
+                else:
+                    results.append(rec)
+                st['watch_results'] = results[-10:]
+                lw = st.get('last_watch') or {}
+                if not lw or str(lw.get('id') or '') == vid or lw.get('result'):
+                    lw.update({'id': vid, 'title': title, 'result': result,
+                               'ts': _now(), 'url': rec['url']})
+                    st['last_watch'] = lw
+                    st['last_watch_ts'] = time.time()
+                    st['thought'] = 'I watched %s. %s' % (title, result[:140])
+                    _wonder(st, 'I watched %s. %s' % (title, result[:160]))
+                _interest_add(st, title, 'watch', 0.45)
+                save_state(st)
+            self._send(200, {'ok': True, 'id': vid})
             return
         if path in ('/obstacles', '/api/world/obstacles'):
             try:

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KIT — resident dashboard</title>
+<style>
+:root{--bg:#0b0e16;--panel:#121827;--line:rgba(215,184,255,.16);--ink:#e6e8ee;--muted:#8aa0b8;--gold:#ffd479;--violet:#d7b8ff;--green:#7dd3a8;--orange:#ffb057;--red:#ff7b7b}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 20% -10%,#211b38 0,var(--bg) 42%);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif;min-height:100vh}
+a{color:var(--green);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:1240px;margin:0 auto;padding:22px 20px 60px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid var(--line);padding-bottom:14px;flex-wrap:wrap}
+.brand{font-size:22px;letter-spacing:.14em;font-weight:700}.brand span{color:var(--violet);font-weight:400;letter-spacing:.04em}
+nav{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.hero{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin:20px 0 14px}
+.hero h1{margin:0 0 3px;font-size:28px;letter-spacing:.04em}.hero .tag{color:var(--violet);font-size:13px}
+.hero .thought{color:#c8d2e0;font-style:italic;margin-top:10px;min-height:20px}
+.hero .self{color:var(--gold);font-size:12px;margin-top:8px}
+.panel{background:linear-gradient(180deg,rgba(18,24,39,.96),rgba(13,18,30,.96));border:1px solid var(--line);border-radius:16px;padding:14px 15px}
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:14px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 11px}
+.stat b{display:block;font-size:20px;color:var(--gold);line-height:1.1}.stat span{font-size:10px;color:var(--muted);letter-spacing:.09em;text-transform:uppercase}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.span2{grid-column:1/-1}
+h2{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--violet);margin:0 0 10px}
+h3{font-size:13px;margin:12px 0 5px;color:var(--ink)}
+.muted{color:var(--muted)}.small{font-size:11px}.tiny{font-size:10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}.chip{border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:10px;color:#c8d2e0;background:rgba(255,255,255,.025)}
+.chip.hot{border-color:rgba(255,212,121,.45);color:var(--gold)}.chip.self{border-color:rgba(125,211,168,.5);color:var(--green)}
+.project-name{font-size:19px;color:var(--gold);margin:2px 0 4px}.project-meta{font-size:11px;color:var(--muted)}
+.bar{height:7px;background:rgba(255,255,255,.07);border-radius:99px;overflow:hidden;margin:9px 0 4px}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--gold));border-radius:99px}
+.artifact{display:grid;grid-template-columns:130px 1fr;gap:11px;padding:11px 0;border-top:1px solid rgba(215,184,255,.10)}
+.artifact:first-child{border-top:0;padding-top:0}
+.thumb{width:130px;height:84px;object-fit:cover;border-radius:9px;background:#1a2130;border:1px solid var(--line)}
+.noimg{width:130px;height:84px;border-radius:9px;background:linear-gradient(135deg,#241c38,#12251f);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:10px;text-align:center;padding:6px}
+.title{font-weight:600;font-size:13px;margin:0 0 2px}.sub{color:var(--muted);font-size:10px;margin-bottom:5px}
+.poem{white-space:pre-wrap;color:var(--violet);font-size:11px;line-height:1.45;border-left:2px solid rgba(215,184,255,.4);padding-left:8px;margin:6px 0}
+.badge{display:inline-block;font-size:9px;letter-spacing:.08em;text-transform:uppercase;border-radius:99px;padding:2px 7px;margin-right:5px;border:1px solid var(--line);color:var(--muted)}
+.badge.image{color:var(--green);border-color:rgba(125,211,168,.45)}.badge.audio{color:var(--orange);border-color:rgba(255,176,87,.45)}.badge.poem{color:var(--violet);border-color:rgba(215,184,255,.45)}.badge.card{color:var(--muted)}
+audio{width:100%;height:28px;margin-top:5px}
+.build{display:flex;justify-content:space-between;gap:10px;border-top:1px solid rgba(215,184,255,.10);padding:7px 0;font-size:11px}.build:first-child{border-top:0}
+.build .k{color:var(--gold)}.build .s{color:var(--muted);font-size:10px;text-align:right}
+.quote{color:var(--gold);font-size:12px;line-height:1.5;border-left:2px solid rgba(255,212,121,.4);padding-left:9px;margin:8px 0}
+.row{display:flex;justify-content:space-between;gap:10px;border-top:1px solid rgba(215,184,255,.08);padding:6px 0;font-size:11px}.row:first-child{border-top:0}
+.row .l{color:var(--muted)}.row .r{text-align:right;color:#c8d2e0;max-width:62%;overflow-wrap:anywhere}
+.list{margin:0;padding-left:16px;color:#c8d2e0;font-size:11px}.list li{margin:4px 0}
+.where code{font-size:10px;color:var(--gold);background:rgba(255,212,121,.07);padding:1px 4px;border-radius:3px}
+.err{border-color:rgba(255,123,123,.5);color:var(--red)}
+@media(max-width:820px){.hero,.grid{grid-template-columns:1fr}.span2{grid-column:auto}.stats{grid-template-columns:repeat(3,1fr)}.artifact{grid-template-columns:90px 1fr}.thumb,.noimg{width:90px;height:64px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand">KIT <span>/ resident dashboard</span></div>
+  <nav><a href="/world/">enter the world</a><a href="/world/?gallery=1">gallery</a><a href="/world/?wishes=1">wishes</a><a href="/">braxisai.com</a><span id="updated" class="tiny">loading…</span></nav>
+</header>
+
+<div class="hero">
+  <div class="panel">
+    <div class="muted tiny" id="worldTag">loading</div>
+    <h1 id="worldName">KIT</h1>
+    <div class="tag" id="tagline"></div>
+    <div class="thought" id="thought"></div>
+    <div class="self" id="selfObs"></div>
+    <div class="muted small" id="act"></div>
+  </div>
+  <div class="panel">
+    <h2>right now</h2>
+    <div class="project-name" id="projectName">between projects</div>
+    <div class="project-meta" id="projectMeta"></div>
+    <div class="bar"><i id="projectBar" style="width:0%"></i></div>
+    <div class="tiny muted" id="projectNote">project progress is the number of matching actions, not a quality score.</div>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><b id="stBuilds">0</b><span>builds</span></div>
+  <div class="stat"><b id="stCreations">0</b><span>creations</span></div>
+  <div class="stat"><b id="stSignals">0</b><span>signals</span></div>
+  <div class="stat"><b id="stVisitors">0</b><span>visitors</span></div>
+  <div class="stat"><b id="stOfferings">0</b><span>offerings</span></div>
+  <div class="stat"><b id="stCalls">0</b><span>LLM calls</span></div>
+</div>
+
+<div class="grid">
+  <section class="panel span2">
+    <h2>autonomy</h2>
+    <div class="row"><span class="l">companion</span><span class="r" id="companion"></span></div>
+    <div class="row"><span class="l">project origins</span><span class="r" id="origins"></span></div>
+    <div class="row"><span class="l">recent mediums</span><span class="r" id="mediums"></span></div>
+    <div class="row"><span class="l">interests</span><span class="r" id="interests"></span></div>
+    <div class="row"><span class="l">desires</span><span class="r" id="desires"></span></div>
+    <div class="row"><span class="l">self-authored queue</span><span class="r" id="queue"></span></div>
+  </section>
+
+  <section class="panel span2">
+    <h2>things KIT made <span class="tiny muted" id="artifactCount"></span></h2>
+    <div id="artifacts"></div>
+  </section>
+
+  <section class="panel">
+    <h2>builds in the world</h2>
+    <div id="builds"></div>
+  </section>
+
+  <section class="panel">
+    <h2>outside the town</h2>
+    <div class="row"><span class="l">last read</span><span class="r" id="reading"></span></div>
+    <div class="row"><span class="l">last watched</span><span class="r" id="watching"></span></div>
+    <div class="row"><span class="l">watch results</span><span class="r" id="watchResults"></span></div>
+    <h3>watcher</h3>
+    <div class="quote" id="watcherNudge">no nudge yet</div>
+    <div class="tiny muted" id="watcherMeta"></div>
+  </section>
+
+  <section class="panel span2 where">
+    <h2>where the things live</h2>
+    <div class="row"><span class="l">creation metadata + poem text</span><span class="r"><code>data/world/world_creations.json</code> · <a href="/api/world/creations">API</a></span></div>
+    <div class="row"><span class="l">real images</span><span class="r"><code>data/media/world/creations/</code> · <a href="/media/world/creations/" target="_blank" rel="noopener">open folder</a></span></div>
+    <div class="row"><span class="l">real songs</span><span class="r"><code>data/songs/Braxis_Songs/Kit/</code> · <a href="/media/music/Braxis_Songs/Kit/" target="_blank" rel="noopener">open folder</a></span></div>
+    <div class="row"><span class="l">builds</span><span class="r"><code>data/world/world_builds.json</code> · <a href="/api/world/builds">API</a></span></div>
+    <div class="row"><span class="l">diary + dreams</span><span class="r"><code>data/world/world_life_journal.md</code></span></div>
+    <div class="row"><span class="l">watcher journal</span><span class="r"><code>data/world/kit_watcher_journal.md</code> · <a href="/api/world/watcher">API</a></span></div>
+    <div class="row"><span class="l">LLM budget</span><span class="r"><code>data/world/kit_llm_budget.json</code> + <code>kit_llm_ledger.jsonl</code></span></div>
+    <div class="row"><span class="l">world</span><span class="r"><a href="/world/">braxisai.com/world/</a></span></div>
+  </section>
+</div>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = ts => { if (!ts) return '—'; try { return new Date(ts).toLocaleString(); } catch(e){ return String(ts); } };
+const short = (s,n=180) => { s=String(s||''); return s.length>n ? s.slice(0,n)+'…' : s; };
+const badge = (label, cls) => '<span class="badge '+cls+'">'+esc(label)+'</span>';
+const chips = (arr, max=8, cls='') => (arr||[]).slice(0,max).map(x=>'<span class="chip '+cls+'">'+esc(typeof x==='object'?(x.text||x.name||JSON.stringify(x)):x)+'</span>').join(' ') || '<span class="muted">—</span>';
+
+function render(s, c, b, w) {
+  const p = s.project || {};
+  $('worldTag').textContent = 'live resident';
+  $('worldName').textContent = s.world_name || s.name || 'KIT';
+  $('tagline').textContent = s.tagline || '';
+  $('thought').textContent = s.thought || '';
+  $('selfObs').textContent = s.self_observation ? 'self-observation: ' + s.self_observation : (s.self_model || '');
+  $('act').textContent = [s.mood ? 'mood: '+s.mood : '', s.action ? 'action: '+s.action : ''].filter(Boolean).join(' · ');
+  $('projectName').textContent = p.name || p.kind || 'between projects';
+  const prog = Number(p.progress || 0), target = Number(p.target || 4);
+  $('projectMeta').textContent = p.name ? ('step ' + prog + ' of ' + target + ' · ' + (p.source === 'self' ? 'self-authored' : (p.source || 'template'))) : (s.intention || '');
+  $('projectBar').style.width = Math.max(0, Math.min(100, target ? prog/target*100 : 0)) + '%';
+  $('stBuilds').textContent = s.builds || (b.builds||[]).length || 0;
+  $('stCreations').textContent = (c.creations||[]).length;
+  $('stSignals').textContent = s.signals_total || 0;
+  $('stVisitors').textContent = s.visitors || 0;
+  $('stOfferings').textContent = s.offerings || 0;
+  $('stCalls').textContent = s.llm_calls || 0;
+
+  const comp = s.companion;
+  $('companion').innerHTML = comp ? ('<span class="chip self">'+esc(comp.name||'friend')+' the '+esc(String(comp.kind||'companion').replace(/-/g,' '))+'</span> <span class="tiny muted">bond '+esc(comp.bond||0)+'</span>') : '<span class="muted">none yet</span>';
+  const origins = s.project_origin_counts || {};
+  $('origins').innerHTML = Object.keys(origins).length ? Object.entries(origins).map(([k,v])=>'<span class="chip '+(k==='self'?'self':'')+'">'+esc(k)+' '+v+'</span>').join(' ') : '<span class="muted">—</span>';
+  $('mediums').innerHTML = chips((s.recent_mediums||[]).slice(-8), 8);
+  $('interests').innerHTML = chips(s.interests||[], 8, 'hot');
+  $('desires').innerHTML = chips(s.desires||[], 4);
+  const q = (s.project_queue||[]).map(x=>x.name||x.kind).filter(Boolean);
+  $('queue').innerHTML = chips(q, 6, 'self');
+
+  const list = (c.creations||[]).slice(-24).reverse();
+  $('artifactCount').textContent = '(' + (c.creations||[]).length + ' total, latest 24)';
+  $('artifacts').innerHTML = list.length ? list.map(x=>{
+    const kind = x.image_url ? 'image' : (x.audio_url ? 'audio' : (x.text ? 'poem' : (x.medium === 'sing' ? 'song card' : 'card only')));
+    const cls = x.image_url ? 'image' : (x.audio_url ? 'audio' : (x.text ? 'poem' : 'card'));
+    const thumb = x.image_url ? '<img class="thumb" src="'+esc(x.image_url)+'" loading="lazy" alt="">' : '<div class="noimg">'+esc(kind)+'</div>';
+    const poem = x.text ? '<div class="poem">'+esc(x.text)+'</div>' : '';
+    const audio = x.audio_url ? '<audio controls preload="none" src="'+esc(x.audio_url)+'"></audio><div class="tiny"><a href="'+esc(x.audio_url)+'" target="_blank" rel="noopener">open audio</a></div>' : '';
+    return '<div class="artifact">'+thumb+'<div><div class="title">'+esc(x.title||x.medium||'a creation')+'</div>'+
+      '<div class="sub">'+badge(kind,cls)+esc(x.medium||'')+(x.subject?' · '+esc(x.subject):'')+(x.at?' · '+esc(fmt(x.at)):'')+'</div>'+
+      poem+audio+(x.pod_url?'<div class="tiny"><a href="'+esc(x.pod_url)+'" target="_blank" rel="noopener">print</a></div>':'')+'</div></div>';
+  }).join('') : '<div class="muted">nothing yet</div>';
+
+  const builds = (b.builds||[]).slice(-14).reverse();
+  $('builds').innerHTML = builds.length ? builds.map(x=>'<div class="build"><div><span class="k">'+esc(x.name||x.kind||'build')+'</span><div class="tiny muted">'+esc(x.kind||'')+(x.site?' · '+esc(x.site):'')+'</div></div><div class="s">lvl '+esc(x.level||1)+'<br>'+esc((x.signals||[]).length||0)+' signal(s)</div></div>').join('') : '<div class="muted">nothing yet</div>';
+
+  const r = s.last_reading || {};
+  $('reading').innerHTML = r.title ? esc(r.title) + '<div class="tiny muted">'+esc(r.source||'')+' · '+esc(fmt(r.ts))+'</div>' : '<span class="muted">—</span>';
+  const lw = s.last_watch || {};
+  $('watching').innerHTML = lw.title ? esc(lw.title) + '<div class="tiny muted">'+esc(fmt(lw.ts))+'</div><div class="tiny">'+esc(short(lw.result||lw.note||'',240))+'</div>' : '<span class="muted">—</span>';
+  const wr = s.watch_results || [];
+  $('watchResults').innerHTML = wr.length ? wr.slice(-3).reverse().map(x=>'<div class="tiny">'+esc(x.title||x.id)+' · '+esc(fmt(x.ts))+'</div>').join('') : '<span class="muted">none yet</span>';
+  $('watcherNudge').textContent = w.nudge || w.note || 'no nudge this run';
+  $('watcherMeta').textContent = [w.ts?'checked '+fmt(w.ts):'', w.actions_taken&&w.actions_taken.length?'actions: '+w.actions_taken.join(', '):'', w.gift?'gift: '+w.gift:''].filter(Boolean).join(' · ');
+
+  $('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
+}
+
+async function get(url){ const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error(url+' '+r.status); return r.json(); }
+async function load(){
+  try {
+    const [s,c,b,w] = await Promise.all([get('/api/world/state'),get('/api/world/creations'),get('/api/world/builds'),get('/api/world/watcher')]);
+    render(s,c,b,w);
+  } catch(e) {
+    $('updated').textContent = 'dashboard offline: ' + e.message;
+    $('updated').classList.add('err');
+  }
+}
+load(); setInterval(load, 15000);
+</script>
+</body>
+</html>

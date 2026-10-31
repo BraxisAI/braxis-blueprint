@@ -90,14 +90,23 @@ still missing.
 
 - **Juniper, the first companion.** KIT has a `befriend` action. On
   2026-10-31 00:11 UTC it made **Juniper the moss-cat** (`comp-1793405460`,
-  bond 0.12). The 3D page renders a small four-legged companion that follows
-  KIT; the HUD and dashboard show its name and bond. This is a pet with simple
-  page behavior, not a second autonomous agent.
+  bond 0.15). Juniper has its own `x/z`, wanders/follows instead of being glued
+  to KIT, and the pair have a `talk to companion` action. A live exchange:
+  *KIT: Do you think the lamps get lonely when the visitors leave? Juniper:
+  You talk to the stones. I listen to them.* The HUD and dashboard show the
+  companion and last words. This is a pet with deterministic speech, not a
+  second autonomous agent.
 - **Dashboard:** https://braxisai.com/kit/ shows live state, the project step,
-  self-observation, companion, project origins, interests, every recent
-  creation with an honest `image` / `audio` / `poem` / `card only` badge, the
-  builds, last read/watch results, and the watcher nudge. It refreshes every
-  15 seconds from the world API.
+  self-observation, companion and last exchange, project origins, interests,
+  every recent creation with an honest `image` / `audio` / `poem` / `card only`
+  badge, the builds, last read/watch results, and the watcher nudge. Click any
+  artifact for a full detail view and a **make a real image**, **make the song**
+  or **rewrite as a real poem** button. It refreshes every 15 seconds.
+- **Real poems:** `kit_poem.py` replaces the deterministic placeholders with
+  9–13 line free-model poems and runs hourly. It deliberately excludes watched
+  video titles and real names.
+- **Build scale:** custom shapes are scaled by type (tower 3×, spire 2.6×,
+  monument 2.5×), so towers and overlooks read against the city blocks.
 - **Project steps:** `progress / target` is the number of matching actions,
   not a quality score. The HUD now says **step X of Y**; future projects use
   3–5 steps.
@@ -208,6 +217,7 @@ modules are in the private recovery archive.
 - `kit_watcher.py` — the dreamkeeper and medium-rut auditor.
 - `kit_watch_vm.py` — VM watch worker: TikTok via yt-dlp, local watch-skill,
   posts results to KIT.
+- `kit_poem.py` — free-writing poem worker; upgrades template poems.
 - `dashboard.html` — the standalone `/kit/` dashboard.
 - `kit_chat.py` — Telegram conversation loop.
 - `kit_reset.py` — archive/reset; `--blank` for self-invented projects.

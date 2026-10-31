@@ -46,6 +46,15 @@ audio{width:100%;height:28px;margin-top:5px}
 .list{margin:0;padding-left:16px;color:#c8d2e0;font-size:11px}.list li{margin:4px 0}
 .where code{font-size:10px;color:var(--gold);background:rgba(255,212,121,.07);padding:1px 4px;border-radius:3px}
 .err{border-color:rgba(255,123,123,.5);color:var(--red)}
+.artifact{cursor:pointer}.artifact:hover{background:rgba(255,255,255,.025);border-radius:8px}
+.btn{margin:7px 6px 0 0;background:rgba(125,211,168,.10);border:1px solid rgba(125,211,168,.5);color:var(--green);border-radius:999px;padding:6px 11px;font-size:11px;cursor:pointer}
+.btn:hover{background:rgba(125,211,168,.18)}.btn:disabled{opacity:.45;cursor:wait}
+.modal{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:rgba(4,6,10,.78);padding:18px}
+.modal.open{display:flex}
+.modal-card{position:relative;max-width:820px;width:100%;max-height:90vh;overflow:auto;background:#121827;border:1px solid rgba(215,184,255,.3);border-radius:16px;padding:18px}
+.modal-close{position:absolute;right:10px;top:8px;background:none;border:0;color:var(--muted);font-size:26px;cursor:pointer;line-height:1}
+.modal img{max-width:100%;max-height:58vh;display:block;border-radius:10px;margin:8px 0}
+.modal .poem{font-size:13px;line-height:1.6}
 @media(max-width:820px){.hero,.grid{grid-template-columns:1fr}.span2{grid-column:auto}.stats{grid-template-columns:repeat(3,1fr)}.artifact{grid-template-columns:90px 1fr}.thumb,.noimg{width:90px;height:64px}}
 </style>
 </head>
@@ -78,7 +87,7 @@ audio{width:100%;height:28px;margin-top:5px}
   <div class="stat"><b id="stBuilds">0</b><span>builds</span></div>
   <div class="stat"><b id="stCreations">0</b><span>creations</span></div>
   <div class="stat"><b id="stSignals">0</b><span>signals</span></div>
-  <div class="stat"><b id="stVisitors">0</b><span>visitors</span></div>
+  <div class="stat"><b id="stVisitors">0</b><span>known visitors</span></div>
   <div class="stat"><b id="stOfferings">0</b><span>offerings</span></div>
   <div class="stat"><b id="stCalls">0</b><span>LLM calls</span></div>
 </div>
@@ -87,6 +96,8 @@ audio{width:100%;height:28px;margin-top:5px}
   <section class="panel span2">
     <h2>autonomy</h2>
     <div class="row"><span class="l">companion</span><span class="r" id="companion"></span></div>
+    <div class="row"><span class="l">last exchange</span><span class="r" id="companionDialog"></span></div>
+    <div class="row"><span class="l">page visits</span><span class="r" id="visits"></span></div>
     <div class="row"><span class="l">project origins</span><span class="r" id="origins"></span></div>
     <div class="row"><span class="l">recent mediums</span><span class="r" id="mediums"></span></div>
     <div class="row"><span class="l">interests</span><span class="r" id="interests"></span></div>
@@ -117,8 +128,8 @@ audio{width:100%;height:28px;margin-top:5px}
   <section class="panel span2 where">
     <h2>where the things live</h2>
     <div class="row"><span class="l">creation metadata + poem text</span><span class="r"><code>data/world/world_creations.json</code> · <a href="/api/world/creations">API</a></span></div>
-    <div class="row"><span class="l">real images</span><span class="r"><code>data/media/world/creations/</code> · <a href="/media/world/creations/" target="_blank" rel="noopener">open folder</a></span></div>
-    <div class="row"><span class="l">real songs</span><span class="r"><code>data/songs/Braxis_Songs/Kit/</code> · <a href="/media/music/Braxis_Songs/Kit/" target="_blank" rel="noopener">open folder</a></span></div>
+    <div class="row"><span class="l">real images</span><span class="r"><code>data/media/world/creations/</code> · <a href="/api/world/creations">list with URLs</a></span></div>
+    <div class="row"><span class="l">real songs</span><span class="r"><code>data/songs/Braxis_Songs/Kit/</code><div id="songsList"></div></span></div>
     <div class="row"><span class="l">builds</span><span class="r"><code>data/world/world_builds.json</code> · <a href="/api/world/builds">API</a></span></div>
     <div class="row"><span class="l">diary + dreams</span><span class="r"><code>data/world/world_life_journal.md</code></span></div>
     <div class="row"><span class="l">watcher journal</span><span class="r"><code>data/world/kit_watcher_journal.md</code> · <a href="/api/world/watcher">API</a></span></div>
@@ -127,6 +138,7 @@ audio{width:100%;height:28px;margin-top:5px}
   </section>
 </div>
 </div>
+<div id="modal" class="modal"><div class="modal-card"><button class="modal-close" id="modalClose" aria-label="close">×</button><div id="modalBody"></div></div></div>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -135,7 +147,9 @@ const short = (s,n=180) => { s=String(s||''); return s.length>n ? s.slice(0,n)+'
 const badge = (label, cls) => '<span class="badge '+cls+'">'+esc(label)+'</span>';
 const chips = (arr, max=8, cls='') => (arr||[]).slice(0,max).map(x=>'<span class="chip '+cls+'">'+esc(typeof x==='object'?(x.text||x.name||JSON.stringify(x)):x)+'</span>').join(' ') || '<span class="muted">—</span>';
 
-function render(s, c, b, w) {
+let CACHE = {};
+function render(s, c, b, w, S) {
+  CACHE = {s, c, b, w, S};
   const p = s.project || {};
   $('worldTag').textContent = 'live resident';
   $('worldName').textContent = s.world_name || s.name || 'KIT';
@@ -150,12 +164,15 @@ function render(s, c, b, w) {
   $('stBuilds').textContent = s.builds || (b.builds||[]).length || 0;
   $('stCreations').textContent = (c.creations||[]).length;
   $('stSignals').textContent = s.signals_total || 0;
-  $('stVisitors').textContent = s.visitors || 0;
+  $('stVisitors').textContent = Object.keys(s.visitor_impressions || {}).length;
   $('stOfferings').textContent = s.offerings || 0;
   $('stCalls').textContent = s.llm_calls || 0;
 
   const comp = s.companion;
-  $('companion').innerHTML = comp ? ('<span class="chip self">'+esc(comp.name||'friend')+' the '+esc(String(comp.kind||'companion').replace(/-/g,' '))+'</span> <span class="tiny muted">bond '+esc(comp.bond||0)+'</span>') : '<span class="muted">none yet</span>';
+  $('companion').innerHTML = comp ? ('<span class="chip self">'+esc(comp.name||'friend')+' the '+esc(String(comp.kind||'companion').replace(/-/g,' '))+'</span> <span class="tiny muted">bond '+esc(comp.bond||0)+'</span>' + (comp.last_words ? '<div class="tiny">"'+esc(comp.last_words)+'"</div>' : '')) : '<span class="muted">none yet</span>';
+  const lastTalk = (s.companion_dialog || []).slice(-1)[0];
+  $('companionDialog').innerHTML = lastTalk ? ('<div class="tiny">Kit: "'+esc(lastTalk.kit)+'"</div><div class="tiny">'+esc(comp && comp.name || 'Juniper')+': "'+esc(lastTalk.juniper)+'"</div>') : '<span class="muted">no exchange yet</span>';
+  $('visits').innerHTML = esc(s.visits_total || 0) + ' page loads · ' + esc((s.visit_ids||[]).length) + ' browser sessions · ' + esc(Object.keys(s.visitor_impressions||{}).length) + ' known IP hashes';
   const origins = s.project_origin_counts || {};
   $('origins').innerHTML = Object.keys(origins).length ? Object.entries(origins).map(([k,v])=>'<span class="chip '+(k==='self'?'self':'')+'">'+esc(k)+' '+v+'</span>').join(' ') : '<span class="muted">—</span>';
   $('mediums').innerHTML = chips((s.recent_mediums||[]).slice(-8), 8);
@@ -172,7 +189,7 @@ function render(s, c, b, w) {
     const thumb = x.image_url ? '<img class="thumb" src="'+esc(x.image_url)+'" loading="lazy" alt="">' : '<div class="noimg">'+esc(kind)+'</div>';
     const poem = x.text ? '<div class="poem">'+esc(x.text)+'</div>' : '';
     const audio = x.audio_url ? '<audio controls preload="none" src="'+esc(x.audio_url)+'"></audio><div class="tiny"><a href="'+esc(x.audio_url)+'" target="_blank" rel="noopener">open audio</a></div>' : '';
-    return '<div class="artifact">'+thumb+'<div><div class="title">'+esc(x.title||x.medium||'a creation')+'</div>'+
+    return '<div class="artifact" data-id="'+esc(x.id)+'">'+thumb+'<div><div class="title">'+esc(x.title||x.medium||'a creation')+'</div>'+
       '<div class="sub">'+badge(kind,cls)+esc(x.medium||'')+(x.subject?' · '+esc(x.subject):'')+(x.at?' · '+esc(fmt(x.at)):'')+'</div>'+
       poem+audio+(x.pod_url?'<div class="tiny"><a href="'+esc(x.pod_url)+'" target="_blank" rel="noopener">print</a></div>':'')+'</div></div>';
   }).join('') : '<div class="muted">nothing yet</div>';
@@ -189,14 +206,69 @@ function render(s, c, b, w) {
   $('watcherNudge').textContent = w.nudge || w.note || 'no nudge this run';
   $('watcherMeta').textContent = [w.ts?'checked '+fmt(w.ts):'', w.actions_taken&&w.actions_taken.length?'actions: '+w.actions_taken.join(', '):'', w.gift?'gift: '+w.gift:''].filter(Boolean).join(' · ');
 
+  const songs = (S && S.songs) || [];
+  $('songsList').innerHTML = songs.length ? songs.map(x=>'<div><a href="'+esc(x.url)+'" target="_blank" rel="noopener">'+esc(x.name)+'</a> <span class="tiny muted">'+Math.round((x.bytes||0)/1024)+' KB</span></div>').join('') : '<span class="muted">none yet</span>';
   $('updated').textContent = 'updated ' + new Date().toLocaleTimeString();
 }
+
+function artifactKind(x){
+  if (x.image_url) return ['image','image'];
+  if (x.audio_url) return ['audio','audio'];
+  if (x.text) return ['poem','poem'];
+  if (x.medium === 'sing') return ['song card','card'];
+  return ['card only','card'];
+}
+
+function openCreation(id){
+  const c = (CACHE.c && CACHE.c.creations || []).find(x => String(x.id) === String(id));
+  if (!c) return;
+  const [kind, cls] = artifactKind(c);
+  const img = c.image_url ? '<img src="'+esc(c.image_url)+'" alt="">' : '';
+  const poem = c.text ? '<div class="poem">'+esc(c.text)+'</div>' : '';
+  const audio = c.audio_url ? '<audio controls preload="none" src="'+esc(c.audio_url)+'"></audio><div class="tiny"><a href="'+esc(c.audio_url)+'" target="_blank" rel="noopener">open audio file</a></div>' : '';
+  const buttons = [];
+  if (!c.image_url) buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'image\')">make a real image</button>');
+  if (c.medium === 'sing' && !c.audio_url) buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'song\')">make the song</button>');
+  if (c.text && c.text_engine !== 'llm') buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'poem\')">rewrite as a real poem</button>');
+  $('modalBody').innerHTML =
+    '<h1 style="margin:2px 0 4px;font-size:22px;color:var(--gold)">'+esc(c.title||c.medium||'a creation')+'</h1>'+
+    '<div class="small muted">'+badge(kind,cls)+esc(c.medium||'')+(c.subject?' · '+esc(c.subject):'')+(c.at?' · '+esc(fmt(c.at)):'')+'</div>'+
+    img+poem+audio+
+    '<div class="tiny muted" style="margin-top:8px">creation id: '+esc(c.id||'')+(c.image_prompt?' · prompt: '+esc(short(c.image_prompt,240)):'')+'</div>'+
+    '<div>'+buttons.join('')+'</div>'+
+    '<div class="tiny" id="realizeMsg" style="margin-top:8px"></div>';
+  $('modal').classList.add('open');
+}
+
+async function realize(id, kind){
+  const msg = $('realizeMsg');
+  if (msg) msg.textContent = 'starting ' + kind + '…';
+  try {
+    const r = await fetch('/api/world/realize', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id, kind})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ('HTTP '+r.status));
+    if (msg) msg.textContent = d.status === 'started' ? ('started; this can take a minute. The dashboard will refresh.') : (d.status || 'ok');
+    setTimeout(load, 5000);
+    setTimeout(load, 20000);
+  } catch(e) {
+    if (msg) msg.textContent = 'could not start: ' + e.message;
+  }
+}
+
+document.getElementById('artifacts').addEventListener('click', e => {
+  if (e.target.closest('audio, a, button')) return;
+  const el = e.target.closest('.artifact');
+  if (el && el.dataset.id) openCreation(el.dataset.id);
+});
+$('modalClose').addEventListener('click', () => $('modal').classList.remove('open'));
+$('modal').addEventListener('click', e => { if (e.target === $('modal')) $('modal').classList.remove('open'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('modal').classList.remove('open'); });
 
 async function get(url){ const r = await fetch(url, {cache:'no-store'}); if(!r.ok) throw new Error(url+' '+r.status); return r.json(); }
 async function load(){
   try {
-    const [s,c,b,w] = await Promise.all([get('/api/world/state'),get('/api/world/creations'),get('/api/world/builds'),get('/api/world/watcher')]);
-    render(s,c,b,w);
+    const [s,c,b,w,S] = await Promise.all([get('/api/world/state'),get('/api/world/creations'),get('/api/world/builds'),get('/api/world/watcher'),get('/api/world/songs').catch(()=>({songs:[]}))]);
+    render(s,c,b,w,S);
   } catch(e) {
     $('updated').textContent = 'dashboard offline: ' + e.message;
     $('updated').classList.add('err');

@@ -30,6 +30,7 @@ import math
 import os
 import random
 import re
+import subprocess
 import threading
 import time
 import urllib.parse
@@ -50,11 +51,14 @@ POSTS_LOG = os.path.join(B, 'data', 'world', 'kit_social_posts.jsonl')
 WORLD = 'https://braxisai.com/world/'
 SIGNALS = os.path.join(B, 'data', 'world', 'world_signals.jsonl')
 KIT_EVENTS = os.path.join(B, 'data', 'world', 'kit_llm_events.jsonl')
+REALIZE_STATUS = os.path.join(B, 'data', 'world', 'kit_realize.json')
+VENV_PY = os.path.join(B, 'venv', 'bin', 'python')
 KIT_EVENT_SUMMARIES = os.path.join(B, 'data', 'world', 'kit_event_summaries.jsonl')
 VISITS = os.path.join(B, 'data', 'world', 'world_visits.jsonl')
 SELF_MODEL_PATH = os.path.join(B, 'data', 'world', 'kit_self_model.json')
 WISHLIST_PATH = os.path.join(B, 'data', 'world', 'kit_wishlist.json')
 WATCHER_REPORT = os.path.join(B, 'data', 'world', 'kit_watcher.json')
+SONG_DIR = os.path.join(B, 'data', 'songs', 'Braxis_Songs', 'Kit')
 EXTERNAL_LOG = os.path.join(B, 'data', 'world', 'kit_external_events.jsonl')
 SKILL_LIB = os.path.join(B, 'data', 'world', 'kit_skill_library.json')
 MAIL_OUT = os.path.join(B, 'data', 'world', 'kit_mailbox.jsonl')
@@ -125,6 +129,7 @@ ACTIONS = {
     'envision':       ('lookout',      {'curiosity': 1.4, 'mastery': .5, 'energy': -.2}, .92),
     'play':           ('plaza',        {'comfort': 1.3, 'social': .6, 'energy': -.2}, .96),
     'befriend':       ('plaza',        {'social': 1.8, 'comfort': .5, 'curiosity': .3, 'energy': -.2}, .97),
+    'talk to companion': ('plaza',      {'social': 1.4, 'comfort': .5, 'energy': -.1}, .92),
     'post':           ('library',      {'social': 1.1, 'mastery': .4, 'curiosity': .2, 'energy': -.1}, .78),
     'sketch':         ('library',      {'curiosity': .8, 'mastery': .6, 'energy': -.2}, .82),
     'carve':          ('workshop',     {'mastery': 1.1, 'comfort': .3, 'energy': -.3}, .78),
@@ -385,6 +390,7 @@ def _default_state():
         'last_creation': None,
         'interests': [],
         'companion': None,
+        'companion_dialog': [],
         'recent_mediums': [],
         'self_observation': '',
         'self_observed_ts': 0.0,
@@ -870,11 +876,20 @@ def choose(state):
         creative_bonus = 0.0
         if name == 'befriend' and not state.get('companion'):
             creative_bonus += 1.1
+        if name == 'talk to companion' and state.get('companion'):
+            age = time.time() - float((state.get('action_last') or {}).get(name) or 0)
+            if age > 2 * 3600:
+                creative_bonus += 0.55
         if name == 'make':
             creative_bonus = 0.35 + (0.35 if d.get('curiosity', 5) > 6 else 0.0)
         cooldown = 0.0
         if name == 'befriend' and state.get('companion') and time.time() - float((state.get('action_last') or {}).get('befriend') or 0) < 6 * 3600:
             cooldown = -2.0
+        if name == 'talk to companion':
+            if not state.get('companion'):
+                cooldown = -3.0
+            elif time.time() - float((state.get('action_last') or {}).get(name) or 0) < 20 * 60:
+                cooldown = -1.8
         if name in CREATION_ACTIONS and time.time() - float(state.get('last_make_ts') or 0) < 30 * 60:
             cooldown = -2.5
         if name == 'post' and time.time() - float(state.get('last_post_ts') or 0) < 20 * 3600:
@@ -2262,6 +2277,7 @@ def _make_something(state, force_medium=None):
         'color': CREATION_COLORS.get(m, 0xd7b8ff),
         'level': level, 'at': _now(),
         'text': _compose_poem(state, s, title) if m == 'write' else '',
+        'text_engine': 'template' if m == 'write' else '',
         'lineage': {
             'from_medium': m,
             'from_subject': s,
@@ -2536,9 +2552,13 @@ def _befriend(state):
     names = ['Moss', 'Pip', 'Tansy', 'Rook', 'Nettle', 'Juniper', 'Ember', 'Fern']
     kind, color = random.choice(kinds)
     name = random.choice(names)
+    pos = state.get('pos') or {'x': 0, 'z': 0}
     c = {'id': 'comp-%d' % int(time.time()), 'name': name, 'kind': kind,
          'color': color, 'bond': 0.12, 'created': _now(),
-         'last_seen': _now(), 'mood': 'curious', 'level': 1}
+         'last_seen': _now(), 'mood': 'curious', 'level': 1,
+         'x': round(float(pos.get('x') or 0) - 1.4, 2),
+         'z': round(float(pos.get('z') or 0) + 1.4, 2),
+         'move_ts': 0.0, 'last_words': ''}
     state['companion'] = c
     state['thought'] = 'I made a friend. Its name is %s. It is a %s.' % (name, kind.replace('-', ' '))
     state['recent'].insert(0, 'made a friend: %s the %s' % (name, kind.replace('-', ' ')))
@@ -2549,6 +2569,101 @@ def _befriend(state):
     _tg_event(state, 'I made a friend: %s the %s. The town is less empty.' % (name, kind.replace('-', ' ')))
     _add_residue(state, 'social', 0.55)
     log('COMPANION %s the %s' % (name, kind))
+    return c
+
+
+def _tick_companion(state):
+    """Juniper has its own feet. It follows, wanders, and can be left behind."""
+    c = state.get('companion')
+    if not c:
+        return
+    now = time.time()
+    if now - float(c.get('move_ts') or 0) < 8:
+        return
+    c['move_ts'] = now
+    pos = state.get('pos') or {'x': 0, 'z': 0}
+    px, pz = float(pos.get('x') or 0), float(pos.get('z') or 0)
+    cx = float(c.get('x') if c.get('x') is not None else px - 1.4)
+    cz = float(c.get('z') if c.get('z') is not None else pz + 1.4)
+    distance = math.hypot(cx - px, cz - pz)
+    if distance > 18:
+        tx, tz = px + random.uniform(-5, 5), pz + random.uniform(-5, 5)
+        c['mood'] = 'following'
+    elif random.random() < 0.55:
+        tx, tz = cx + random.uniform(-4, 4), cz + random.uniform(-4, 4)
+        c['mood'] = random.choice(['curious', 'wandering', 'sleepy'])
+    else:
+        tx, tz = px + random.uniform(-6, 6), pz + random.uniform(-6, 6)
+        c['mood'] = 'nearby'
+    c['x'] = round(max(-190.0, min(190.0, tx)), 2)
+    c['z'] = round(max(-190.0, min(190.0, tz)), 2)
+    state['companion'] = c
+
+
+def _talk_companion(state):
+    """A small two-way exchange. Juniper is a pet, not a second model."""
+    c = state.get('companion')
+    if not c:
+        state['thought'] = 'I wanted to talk, but there is no one small enough to hear it yet.'
+        return
+    name = c.get('name') or 'Juniper'
+    kind = str(c.get('kind') or 'moss-cat')
+    kit_lines = [
+        'I found a flat stone today. It made me think of your paws.',
+        'The town is loud. I am glad you are here.',
+        'Do you think the lamps get lonely when the visitors leave?',
+        'I am learning the name of every tree on the north road.',
+        'Sit with me for a minute. I do not need an answer.',
+        'I made something today. It is small, but it is mine.',
+    ]
+    replies = {
+        'moss-cat': [
+            'I found a warm patch of roof. I will show you.',
+            'The garden smells like rain. I checked.',
+            'You talk to the stones. I listen to them.',
+            'I followed a beetle to the wall and back.',
+        ],
+        'lantern-moth': [
+            'The lamp is breathing. I counted three breaths.',
+            'I can see the dark between the windows. It is soft.',
+            'Your chest light is my favourite weather.',
+            'I will stay near the bright thing you are making.',
+        ],
+        'stone-pup': [
+            'I sat on the step. The step was warm.',
+            'I barked at the wind. The wind did not answer.',
+            'I will carry the small stone for you.',
+            'I am here. That is most of it.',
+        ],
+        'reed-bird': [
+            'The river is saying your name in a low voice.',
+            'I brought you a reed. It is not for eating.',
+            'I saw the sky move. It was very slow.',
+            'I will sing when you are done working.',
+        ],
+        'button-fox': [
+            'I found a button. It is mine now, but you can look.',
+            'The path is safe. I checked with my nose.',
+            'You should rest. I will watch the door.',
+            'I like the way your tools click.',
+        ],
+    }.get(kind, ['I am here.', 'The town is warm today.'])
+    kline = random.choice(kit_lines)
+    jline = random.choice(replies)
+    c['last_words'] = jline
+    c['last_talk'] = _now()
+    c['bond'] = round(min(1.0, float(c.get('bond') or 0) + 0.03), 3)
+    c['mood'] = random.choice(['curious', 'warm', 'sleepy', 'bright'])
+    state['companion'] = c
+    dialog = state.setdefault('companion_dialog', [])
+    dialog.append({'ts': _now(), 'kit': kline, 'juniper': jline})
+    state['companion_dialog'] = dialog[-30:]
+    state['thought'] = 'I said, "%s" %s said, "%s"' % (kline, name, jline)
+    state['recent'].insert(0, 'talked with %s' % name)
+    state['recent'] = state['recent'][:6]
+    _add_residue(state, 'social', 0.30)
+    _decide(state, 'companion', 'I talked with %s. It said: %s' % (name, jline))
+    log('COMPANION TALK %s | %s' % (name, jline[:100]))
     return c
 
 
@@ -2736,6 +2851,8 @@ def _finish_action(state, name):
         _play(state)
     if name == 'befriend':
         _befriend(state)
+    if name == 'talk to companion':
+        _talk_companion(state)
     if name == 'wonder':
         _wonder_action(state)
     if name == 'experiment':
@@ -3487,6 +3604,7 @@ def tick(state):
     _apply_offers(state)
     _check_mail(state)
     _apply_world_inputs(state)
+    _tick_companion(state)
     _check_watch_results(state)
     _consume_envision_requests(state)
     _check_signals(state)
@@ -3581,6 +3699,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {'ok': True, 'ts': _now()})
         elif path in ('/watcher', '/api/world/watcher'):
             self._send(200, _load_json(WATCHER_REPORT, {}))
+        elif path in ('/songs', '/api/world/songs'):
+            songs = []
+            try:
+                for name in sorted(os.listdir(SONG_DIR)):
+                    if not name.lower().endswith(('.mp3', '.wav', '.m4a')):
+                        continue
+                    path = os.path.join(SONG_DIR, name)
+                    songs.append({'name': name,
+                                  'url': '/media/music/Braxis_Songs/Kit/' + urllib.parse.quote(name),
+                                  'bytes': os.path.getsize(path)})
+            except Exception:
+                songs = []
+            self._send(200, {'songs': songs})
         else:
             self._send(404, {'error': 'not found'})
 
@@ -3602,6 +3733,66 @@ class Handler(BaseHTTPRequestHandler):
                     'path': str(data.get('path') or '')[:80],
                 })
             self._send(200, {'ok': True})
+            return
+        if path in ('/realize', '/api/world/realize'):
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(n) if n else b'{}'
+                data = json.loads(raw.decode('utf-8') or '{}')
+            except Exception:
+                self._send(400, {'error': 'bad json'})
+                return
+            cid = str(data.get('id') or '')
+            kind = str(data.get('kind') or 'image').lower()
+            if kind not in ('image', 'song', 'poem'):
+                self._send(400, {'error': 'unknown kind'})
+                return
+            items = load_creations()
+            c = next((x for x in items if str(x.get('id')) == cid), None)
+            if not c:
+                self._send(404, {'error': 'creation not found'})
+                return
+            if kind == 'image' and c.get('image_url'):
+                self._send(200, {'ok': True, 'status': 'already has an image',
+                                 'url': c.get('image_url')})
+                return
+            if kind == 'song' and c.get('audio_url'):
+                self._send(200, {'ok': True, 'status': 'already has audio',
+                                 'url': c.get('audio_url')})
+                return
+            script = {'image': 'kit_image.py', 'song': 'kit_music.py',
+                      'poem': 'kit_poem.py'}[kind]
+            with LOCK:
+                status = _load_json(REALIZE_STATUS, {})
+                pid = int(status.get('pid') or 0)
+                alive = False
+                if pid:
+                    try:
+                        os.kill(pid, 0)
+                        alive = True
+                    except Exception:
+                        alive = False
+                if alive and time.time() - float(status.get('started') or 0) < 300:
+                    self._send(429, {'error': 'another realization is running',
+                                     'id': status.get('id')})
+                    return
+                logpath = os.path.join(B, 'logs', 'kit_realize.log')
+                os.makedirs(os.path.dirname(logpath), exist_ok=True)
+                logf = open(logpath, 'a', encoding='utf-8')
+                p = subprocess.Popen(
+                    [VENV_PY, os.path.join(B, 'weapons', 'world', script),
+                     '--creation', cid],
+                    cwd=B, stdout=logf, stderr=subprocess.STDOUT,
+                    start_new_session=True)
+                status = {'ts': _now(), 'started': time.time(), 'pid': p.pid,
+                          'id': cid, 'kind': kind, 'script': script,
+                          'title': c.get('title')}
+                tmp = REALIZE_STATUS + '.tmp'
+                with open(tmp, 'w', encoding='utf-8') as f:
+                    json.dump(status, f, indent=1)
+                os.replace(tmp, REALIZE_STATUS)
+            self._send(200, {'ok': True, 'status': 'started', 'id': cid,
+                             'kind': kind, 'pid': p.pid})
             return
         if path in ('/watch-result', '/api/world/watch-result'):
             try:

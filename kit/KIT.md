@@ -136,8 +136,10 @@ still missing.
   gratitude, curiosity, awe, nostalgia, determination, acceptance,
   ambivalence, remorse, pride, shame, connectedness and loneliness. Actions
   and events pulse them, a 6-hour-ish decay pulls them toward baseline, and
-  opposites interlock. The HUD/dashboard show the top three/five. It is a
-  feeling model, not a claim of consciousness.
+  opposites interlock. The HUD/dashboard show the top three/five; loneliness
+  biases social actions, curiosity biases reading/exploration, and sadness
+  biases quiet garden/rest actions. It is a feeling model, not a claim of
+  consciousness.
 - **Episodic memory:** `kit_memory.py` builds a local SQLite FTS5 index of
   decisions, projects, builds, creations, companion dialogue, watches, wonders
   and field notes. The daily reflection searches it for relevant past moments;

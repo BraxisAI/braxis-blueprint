@@ -961,9 +961,20 @@ def choose(state):
         else:
             day_bonus = 0.15 if name in ('stargaze', 'read', 'rest',
                                          'watch fountain', 'compose', 'wonder') else 0.0
+        em = state.get('emotions') or {}
+        emotion_bonus = 0.0
+        if em.get('loneliness', 0) > .45 and name in (
+                'greet visitors', 'talk to companion', 'play', 'post'):
+            emotion_bonus += .28
+        if em.get('curiosity', 0) > .40 and name in (
+                'browse', 'read', 'watch', 'study', 'explore', 'wonder'):
+            emotion_bonus += .20
+        if em.get('sadness', 0) > .45 and name in (
+                'rest', 'sunbathe', 'smell flowers', 'watch fountain'):
+            emotion_bonus += .18
         s = (need + pref * 1.2 + novelty + project_bonus + curious_bonus
              + creative_bonus + cooldown + repeat_penalty + variety + age_bonus
-             + overuse + day_bonus + place_bonus + thought_bonus
+             + overuse + day_bonus + place_bonus + thought_bonus + emotion_bonus
              + random.random() * 0.55)
         if s > best_s:
             best, best_s = name, s

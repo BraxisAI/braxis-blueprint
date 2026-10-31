@@ -199,8 +199,10 @@ function render(s, c, b, w, S, N) {
   const q = (s.project_queue||[]).map(x=>x.name||x.kind).filter(Boolean);
   $('queue').innerHTML = chips(q, 6, 'self');
 
-  const list = (c.creations||[]).slice(-24).reverse();
-  $('artifactCount').textContent = '(' + (c.creations||[]).length + ' total, latest 24)';
+  const allItems = (c.creations||[]).slice(-24).reverse();
+  const realItems = allItems.filter(x => x.image_url || x.audio_url || x.text);
+  const list = realItems.length ? realItems : allItems;
+  $('artifactCount').textContent = '(' + realItems.length + ' real, ' + Math.max(0, allItems.length - realItems.length) + ' cards pending)';
   $('artifacts').innerHTML = list.length ? list.map(x=>{
     const kind = x.image_url ? 'image' : (x.audio_url ? 'audio' : (x.text ? 'poem' : (x.medium === 'sing' ? 'song card' : 'card only')));
     const cls = x.image_url ? 'image' : (x.audio_url ? 'audio' : (x.text ? 'poem' : 'card'));

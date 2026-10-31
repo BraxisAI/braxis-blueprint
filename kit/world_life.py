@@ -900,7 +900,7 @@ def choose(state):
                 cooldown = -3.0
             elif time.time() - float((state.get('action_last') or {}).get(name) or 0) < 20 * 60:
                 cooldown = -1.8
-        if name in CREATION_ACTIONS and time.time() - float(state.get('last_make_ts') or 0) < 30 * 60:
+        if name in CREATION_ACTIONS and time.time() - float(state.get('last_make_ts') or 0) < 3 * 3600:
             cooldown = -2.5
         if name == 'post' and time.time() - float(state.get('last_post_ts') or 0) < 20 * 3600:
             cooldown = -3.0
@@ -966,7 +966,9 @@ def choose(state):
     # A small deliberate randomness keeps a day from collapsing into one
     # action. It is lower while a project is active.
     if random.random() < (0.06 if project else 0.15):
-        pool = [n for n in ACTIONS if n not in recent_actions[-3:]]
+        pool = [n for n in ACTIONS if n not in recent_actions[-3:]
+                and not (n in CREATION_ACTIONS and
+                         time.time() - float(state.get('last_make_ts') or 0) < 3 * 3600)]
         if pool:
             return random.choice(pool)
     return best or 'watch fountain'
@@ -2268,7 +2270,15 @@ def _make_something(state, force_medium=None):
     subjects = [s for s in (state.get('subjects') or ['the garden'])
                 if _public_safe(s)] or ['the garden']
     subjects = list(dict.fromkeys(interests + subjects))
+    _fn = state.get('last_field_note') or {}
+    if _fn.get('topic') and _fn['topic'] not in subjects:
+        subjects.append(_fn['topic'])
     recent_med = _recent_mediums(state, 6)
+    try:
+        recent_subs = [str(c.get('subject') or '').lower()
+                       for c in load_creations()[-12:]]
+    except Exception:
+        recent_subs = []
     prefs = state.get('creative_prefs') or {}
     top_desire = ''
     if state.get('desires'):
@@ -2280,9 +2290,24 @@ def _make_something(state, force_medium=None):
             pref = float(prefs.get(pair, .4))
             novelty = .7 if pair not in prefs else 0.0
             bonus = .25 if top_desire and any(w in top_desire for w in s.lower().split()) else 0.0
+            _low = str(s).lower()
+            _web = any(w in _low for w in ('news', 'wikipedia', 'github', 'arxiv',
+                                           'trending', 'artificial intelligence',
+                                           'ai models', 'laptop', 'software', 'code',
+                                           'factor xiii', 'aquifer', 'website'))
+            _concrete = any(w in _low for w in ('garden', 'lantern', 'fountain', 'train',
+                                                'bird', 'stone', 'glass', 'river', 'moon',
+                                                'tree', 'bridge', 'window', 'seed', 'rain',
+                                                'moss', 'clock', 'market', 'bench', 'sky',
+                                                'cat', 'door', 'root', 'iron', 'paper',
+                                                'star', 'hill', 'harbor', 'bell', 'fire',
+                                                'cloud', 'salt', 'flower', 'workshop'))
+            visual_bonus = 0.38 if _concrete else (-0.55 if _web else 0.0)
             interest_bonus = 0.30 if s in interests else 0.0
-            rut = 0.85 * recent_med.count(m) + (1.2 if m == 'write' and recent_med.count(m) else 0)
-            score = (pref * 1.6 + novelty + bonus + interest_bonus - rut
+            subject_rut = 0.55 * recent_subs.count(str(s).lower())
+            rut = (0.85 * recent_med.count(m) + subject_rut
+                   + (1.2 if m == 'write' and recent_med.count(m) else 0))
+            score = (pref * 1.6 + novelty + bonus + interest_bonus + visual_bonus - rut
                      + random.random() * .5)
             if score > best_s:
                 best_s, best = score, (m, s, pair)

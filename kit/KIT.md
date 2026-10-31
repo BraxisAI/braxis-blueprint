@@ -42,6 +42,10 @@ still missing.
   action forever.
 - **Project cooldown:** 30–60 minutes between projects; the deterministic
   composer waits 90 minutes, so KIT is not a build conveyor.
+- **Creation cadence:** 3-hour shared cooldown, and the random exploration pool
+  cannot bypass it. This fixed a 93-creations-in-24-hours card factory. The
+  image lane runs every 2 hours, and the dashboard/world gallery show real
+  artifacts first; cards are counted but not shown first.
 - **Self-authored queue:** the daily reflection returns three project ideas in
   KIT's own words (`IDEAS`), tagged `source='self'` and used before templates.
   `project_origin_counts` records self vs template vs continuity starts, and

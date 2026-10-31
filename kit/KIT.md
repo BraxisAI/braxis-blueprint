@@ -37,7 +37,8 @@ still missing.
   the queue empties.
 - A completed project becomes a persistent build in `world_builds.json`.
 - The build vocabulary includes bridge, arch, garden, tower, lantern, bench,
-  fountain, ring, spire, and **tree** layers. Projects advance through varied
+  fountain, ring, spire, tree, well, gate, kiln, boat, windmill, sign, and
+  KIT-authored primitive shapes. Projects advance through varied
   verbs (garden/plant/water, build/tinker/sketch/carve, sculpt/paint), not one
   action forever.
 - **Project cooldown:** 30–60 minutes between projects; the deterministic
@@ -113,11 +114,14 @@ still missing.
 - **World spread:** satellite sites, an 82% outer draw, a 10-unit gap, 1,400
   instanced grass blades and 260 flowers, a **wide view** button, and a fixed
   terrain fallback that no longer drops the outer world into a dark crater.
+- **N8AO:** the world uses N8AO 2.0.1 in Medium quality with half-resolution
+  AO, loaded dynamically with a plain-render fallback. Stock SSAO and Bokeh
+  were tested and removed; they washed out or blurred the scene.
 ## Companion and dashboard
 
 - **Juniper, the first companion.** KIT has a `befriend` action. On
   2026-10-31 00:11 UTC it made **Juniper the moss-cat** (`comp-1793405460`,
-  bond 0.15). Juniper has its own `x/z`, wanders/follows instead of being glued
+  bond 1.0). Juniper has its own `x/z`, wanders/follows instead of being glued
   to KIT, and the pair have a `talk to companion` action. A live exchange:
   *KIT: Do you think the lamps get lonely when the visitors leave? Juniper:
   You talk to the stones. I listen to them.* The HUD and dashboard show the

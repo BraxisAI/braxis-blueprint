@@ -2129,60 +2129,61 @@ def _self_observe(state):
         log('SELF %s' % line[:140])
 
 
-def _search_web(topic, timeout=15):
-    # Search free public indexes for a real page about the topic.
+def _search_web(topic, timeout=6):
+    """One free search provider per browse, so the tick never blocks for 60s."""
     q = urllib.parse.quote(str(topic or '').strip())
     if not q:
         return None
-    candidates = []
+    mode = random.choice(('wiki', 'hn', 'github', 'arxiv'))
     try:
-        req = urllib.request.Request(
-            'https://en.wikipedia.org/w/api.php?action=query&list=search'
-            '&srsearch=%s&format=json&srlimit=3' % q,
-            headers={'User-Agent': UA})
-        d = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode())
-        for hit in ((d.get('query') or {}).get('search') or [])[:2]:
-            title = hit.get('title') or ''
-            if title:
-                candidates.append(('Wikipedia search',
-                                   'https://en.wikipedia.org/wiki/' +
-                                   urllib.parse.quote(title.replace(' ', '_'))))
-    except Exception:
-        pass
-    try:
-        req = urllib.request.Request(
-            'https://hn.algolia.com/api/v1/search?query=%s&tags=story&hitsPerPage=3' % q,
-            headers={'User-Agent': UA})
-        d = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode())
-        for hit in (d.get('hits') or [])[:2]:
+        if mode == 'wiki':
+            d = json.loads(urllib.request.urlopen(urllib.request.Request(
+                'https://en.wikipedia.org/w/api.php?action=query&list=search'
+                '&srsearch=%s&format=json&srlimit=2' % q,
+                headers={'User-Agent': UA}), timeout=timeout).read().decode())
+            hit = ((d.get('query') or {}).get('search') or [{}])[0]
+            if hit.get('title'):
+                return ('Wikipedia search', 'https://en.wikipedia.org/wiki/' +
+                        urllib.parse.quote(hit['title'].replace(' ', '_')))
+        elif mode == 'hn':
+            d = json.loads(urllib.request.urlopen(urllib.request.Request(
+                'https://hn.algolia.com/api/v1/search?query=%s&tags=story&hitsPerPage=2' % q,
+                headers={'User-Agent': UA}), timeout=timeout).read().decode())
+            hit = (d.get('hits') or [{}])[0]
             url = hit.get('url') or ('https://news.ycombinator.com/item?id=' +
                                      str(hit.get('objectID') or ''))
             if url:
-                candidates.append(('Hacker News search', url))
-    except Exception:
-        pass
-    try:
-        req = urllib.request.Request(
-            'https://api.github.com/search/repositories?q=%s&sort=stars&per_page=3' % q,
-            headers={'User-Agent': UA})
-        d = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode())
-        for hit in (d.get('items') or [])[:2]:
+                return ('Hacker News search', url)
+        elif mode == 'github':
+            d = json.loads(urllib.request.urlopen(urllib.request.Request(
+                'https://api.github.com/search/repositories?q=%s&sort=stars&per_page=2' % q,
+                headers={'User-Agent': UA}), timeout=timeout).read().decode())
+            hit = (d.get('items') or [{}])[0]
             if hit.get('html_url'):
-                candidates.append(('GitHub search', hit['html_url']))
+                return ('GitHub search', hit['html_url'])
+        else:
+            raw = urllib.request.urlopen(urllib.request.Request(
+                'http://export.arxiv.org/api/query?search_query=all:%s&max_results=2' % q,
+                headers={'User-Agent': UA}), timeout=timeout).read().decode('utf-8', 'ignore')
+            m = re.search(r'<id>(https?://arxiv\.org/abs/[^<]+)</id>', raw)
+            if m:
+                return ('arXiv search', m.group(1))
     except Exception:
         pass
-    try:
-        req = urllib.request.Request(
-            'http://export.arxiv.org/api/query?search_query=all:%s&max_results=3' % q,
-            headers={'User-Agent': UA})
-        raw = urllib.request.urlopen(req, timeout=timeout).read().decode('utf-8', 'ignore')
-        for m in re.finditer(r'<id>(https?://arxiv\.org/abs/[^<]+)</id>', raw):
-            candidates.append(('arXiv search', m.group(1)))
-            if len(candidates) > 5:
-                break
-    except Exception:
-        pass
-    return random.choice(candidates) if candidates else None
+    # If the chosen provider misses, try Wikipedia quickly; never chain all four.
+    if mode != 'wiki':
+        try:
+            d = json.loads(urllib.request.urlopen(urllib.request.Request(
+                'https://en.wikipedia.org/w/api.php?action=query&list=search'
+                '&srsearch=%s&format=json&srlimit=2' % q,
+                headers={'User-Agent': UA}), timeout=timeout).read().decode())
+            hit = ((d.get('query') or {}).get('search') or [{}])[0]
+            if hit.get('title'):
+                return ('Wikipedia search', 'https://en.wikipedia.org/wiki/' +
+                        urllib.parse.quote(hit['title'].replace(' ', '_')))
+        except Exception:
+            pass
+    return None
 
 
 def _do_browse(state):

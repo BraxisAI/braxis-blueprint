@@ -174,6 +174,14 @@ def main():
             _api('sendMessage', chat_id=chat, text=reply[:4000])
         except Exception as e:
             print('send failed:', str(e)[:120], flush=True)
+        try:
+            import datetime as _dt
+            with open(os.path.join(B, 'data', 'world', 'kit_chat_log.jsonl'), 'a',
+                      encoding='utf-8') as _f:
+                _f.write(json.dumps({'ts': _dt.datetime.now(_dt.timezone.utc).isoformat(),
+                                     'q': text[:1000], 'a': reply[:2000]}) + chr(10))
+        except Exception:
+            pass
     try:
         json.dump({'offset': off}, open(OFFSET, 'w', encoding='utf-8'), indent=1)
     except Exception:

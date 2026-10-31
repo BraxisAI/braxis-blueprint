@@ -849,6 +849,8 @@ def _thought(state, action=None, place=None):
 
 
 def choose(state):
+    if state.pop('_force_browse', False):
+        return 'browse'
     p = state.get('practice') or {}
     steps = p.get('steps') or []
     idx = int(p.get('index') or 0)
@@ -4005,6 +4007,63 @@ class Handler(BaseHTTPRequestHandler):
                     _wonder(st, rec['question'])
                 save_state(st)
             self._send(200, {'ok': True, 'topic': topic})
+            return
+        if path in ('/browse-request', '/api/world/browse-request'):
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(n) if n else b'{}'
+                data = json.loads(raw.decode('utf-8') or '{}')
+            except Exception:
+                self._send(400, {'error': 'bad json'})
+                return
+            topic = _clean_topic(str(data.get('topic') or ''))[:80]
+            if not topic:
+                self._send(400, {'error': 'empty topic'})
+                return
+            with LOCK:
+                st = load_state()
+                st['browse_topic'] = topic
+                st['_force_browse'] = True
+                st['_pending_action'] = 'browse'
+                st['thought'] = 'The founder asked me to look up %s. I am going to the library.' % topic
+                st['recent'].insert(0, 'the founder asked me to look up %s' % topic[:60])
+                st['recent'] = st['recent'][:6]
+                save_state(st)
+            self._send(200, {'ok': True, 'topic': topic})
+            return
+        if path in ('/watch-request', '/api/world/watch-request'):
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(n) if n else b'{}'
+                data = json.loads(raw.decode('utf-8') or '{}')
+            except Exception:
+                self._send(400, {'error': 'bad json'})
+                return
+            url = str(data.get('url') or '').strip()
+            if not url.startswith(('http://', 'https://')):
+                self._send(400, {'error': 'bad url'})
+                return
+            try:
+                from shared.watch_request import watch_request
+                ok, note = watch_request(
+                    url, 'Kit', 'The founder asked KIT to watch this. What is in it, '
+                    'and what should it mean to a small robot gardener?')
+            except Exception as e:
+                ok, note = False, str(e)[:160]
+            with LOCK:
+                st = load_state()
+                vid = ''
+                m = re.search(r'(?:/video/|[?&]v=)([\w-]{6,})', url)
+                if m:
+                    vid = m.group(1)
+                st['last_watch'] = {'url': url, 'title': url, 'note': note,
+                                    'id': vid, 'ts': _now()}
+                st['last_watch_ts'] = time.time()
+                st['thought'] = 'The founder sent me a video. I want to see it.'
+                st['recent'].insert(0, 'the founder sent me a video')
+                st['recent'] = st['recent'][:6]
+                save_state(st)
+            self._send(200, {'ok': bool(ok), 'note': note})
             return
         if path in ('/realize', '/api/world/realize'):
             try:

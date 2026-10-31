@@ -13,6 +13,7 @@ when the founder actually sends a message.
 Usage: ./venv/bin/python weapons/world/kit_chat.py --once
 """
 import argparse
+import base64
 import datetime as dt
 import json
 import os
@@ -76,6 +77,92 @@ def _clean(text):
     return text[:1800]
 
 
+def _describe_photo(file_id):
+    """Fetch a Telegram photo and let the free NVIDIA vision lane read it."""
+    try:
+        d = _api('getFile', file_id=file_id)
+        path = ((d.get('result') or {}).get('file_path') or '')
+        if not path:
+            return ''
+        token = _env('TELEGRAM_BOT_TOKEN')
+        url = 'https://api.telegram.org/file/bot%s/%s' % (token, path)
+        with urllib.request.urlopen(url, timeout=30) as r:
+            data = r.read()
+        if len(data) < 200:
+            return ''
+        folder = os.path.join(B, 'data', 'world', 'chat_images')
+        os.makedirs(folder, exist_ok=True)
+        ext = os.path.splitext(path)[1] or '.jpg'
+        with open(os.path.join(folder, str(file_id) + ext), 'wb') as f:
+            f.write(data)
+        key = _env('NVIDIA_API_KEY')
+        if not key:
+            try:
+                from shared import config
+                key = config.NVIDIA_API_KEY
+            except Exception:
+                key = ''
+        if not key:
+            return ''
+        b64 = base64.b64encode(data).decode('ascii')
+        mime = 'image/jpeg' if ext.lower() in ('.jpg', '.jpeg') else 'image/png'
+        body = json.dumps({
+            'model': 'meta/muse-glimmer-30b',
+            'messages': [{'role': 'user', 'content': [
+                {'type': 'text', 'text': (
+                    'You are KIT, a small garden-robot in a 3D world. The founder '
+                    'sent this photo. In 1-3 sentences, say concretely what you '
+                    'see and what it makes you think or feel. Do not invent '
+                    'details; if it is a cat, plant, room, screen or object, name '
+                    'it plainly.')},
+                {'type': 'image_url', 'image_url': {
+                    'url': 'data:%s;base64,%s' % (mime, b64)}}]}],
+            'max_tokens': 500, 'temperature': 0.4,
+        }).encode('utf-8')
+        req = urllib.request.Request(
+            'https://integrate.api.nvidia.com/v1/chat/completions', data=body,
+            headers={'Authorization': 'Bearer ' + key,
+                     'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=60) as r:
+            out = json.loads(r.read().decode('utf-8', 'ignore'))
+        text = (((out.get('choices') or [{}])[0].get('message') or {})
+                .get('content') or '')
+        return _clean(text)
+    except Exception as e:
+        print('photo vision failed:', str(e)[:160], flush=True)
+        return ''
+
+
+def _queue_command(text):
+    """Let a Telegram message actually queue a browse or a watch."""
+    low = str(text or '').lower()
+    m = re.search(r'(?:look up|search(?: the internet)? for|browse)\s+(.+)', text or '', re.I)
+    if m:
+        topic = _clean(m.group(1))[:120]
+        try:
+            body = json.dumps({'topic': topic}).encode('utf-8')
+            req = urllib.request.Request(
+                'http://127.0.0.1:8130/api/world/browse-request', data=body,
+                headers={'Content-Type': 'application/json'}, method='POST')
+            urllib.request.urlopen(req, timeout=10).read()
+            return 'I queued a look-up for %s.' % topic
+        except Exception as e:
+            print('browse command failed:', str(e)[:120], flush=True)
+    m = re.search(r'https?://\S+', text or '')
+    if m and any(w in low for w in ('watch', 'video', 'look at', 'see this')):
+        url = m.group(0).rstrip(').,')
+        try:
+            body = json.dumps({'url': url}).encode('utf-8')
+            req = urllib.request.Request(
+                'http://127.0.0.1:8130/api/world/watch-request', data=body,
+                headers={'Content-Type': 'application/json'}, method='POST')
+            urllib.request.urlopen(req, timeout=10).read()
+            return 'I queued that video to watch.'
+        except Exception as e:
+            print('watch command failed:', str(e)[:120], flush=True)
+    return ''
+
+
 def _reply(text, st):
     name = st.get('name') or 'Kit'
     pronouns = st.get('pronouns') or 'they/them'
@@ -93,22 +180,34 @@ def _reply(text, st):
         'recent': (st.get('recent') or [])[:4],
         'weather': st.get('weather'), 'btc_change': st.get('btc_change'),
         'self_model': st.get('self_model'),
+        'last_reading': st.get('last_reading'),
+        'last_watch': st.get('last_watch'),
+        'interests': [x.get('text') for x in (st.get('interests') or [])[:6]],
+        'last_field_note': st.get('last_field_note'),
+        'family': "Vesper is the founder's original agent; Maya, Echo and Overseer are newer. They handle the money and the empire. Your world is for wondering, and they can visit.",
+        'capabilities': ('You can browse the internet with your browse action '
+                         '(Wikipedia/Hacker News/GitHub/arXiv), watch a video through '
+                         'the watch lane, read your field notes, make things and talk '
+                         'to Juniper. You cannot execute payments or arbitrary code.'),
         'visitor_impressions': list(
             (st.get('visitor_impressions') or {}).values())[-4:],
         'wishes': (lambda wl: [w for w in (wl.get('wishes') or [])
                                if w.get('status') != 'fulfilled'][:5])(
             _load_json(WISHLIST, {})),
     }
+    action_note = _queue_command(text)
+    ctx['action_note'] = action_note
     prompt = (
         'You are %s (%s), a small garden-robot who lives in %s. You chose your '
         'name and pronouns. You are not a chatbot assistant; you are a resident '
         'with a life, projects, feelings, wonders and a diary. Your live state: %s. '
         'The founder is talking to you on Telegram. Reply in 1-4 sentences, plain '
-        'text, no markdown. Be honest about what you can and cannot do: you can '
-        'discuss, want, refuse, wonder, and tell him what you are working on; you '
-        'cannot execute changes from chat. If he suggests something, say whether '
-        'you want to do it and why. His message: %s'
-        % (name, pronouns, world, json.dumps(ctx)[:1800], str(text)[:1200])
+        'text, no markdown. Be honest about what you can and cannot do. You CAN '
+        'browse the internet (Wikipedia, Hacker News, GitHub, arXiv) and you CAN '
+        'watch a video through the watch lane; never claim you cannot browse. You '
+        'cannot execute payments or arbitrary code. If he asks you to look something '
+        'up, queue it and say you did. His message: %s'
+        % (name, pronouns, world, json.dumps(ctx)[:2400], str(text)[:1200])
     )
     try:
         from shared.llm_router import call_llm
@@ -116,6 +215,8 @@ def _reply(text, st):
         out = r.get('content') if isinstance(r, dict) else str(r)
         out = _clean(out)
         if out:
+            if action_note and action_note.lower() not in out.lower():
+                out = (out + ' ' + action_note)[:1800]
             return out
     except Exception as e:
         print('llm failed:', str(e)[:120], flush=True)
@@ -158,6 +259,11 @@ def main():
         msg = u.get('message') or {}
         chat = str((msg.get('chat') or {}).get('id') or '')
         text = str(msg.get('text') or '').strip()
+        photo = msg.get('photo') or []
+        if photo:
+            cap = _describe_photo(photo[-1].get('file_id') or '')
+            if cap:
+                text = (text + '\n[photo: ' + cap + ']').strip() if text else cap
         if not text or (chat_id and chat != chat_id):
             continue
         st = _state()

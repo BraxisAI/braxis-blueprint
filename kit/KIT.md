@@ -171,8 +171,10 @@ still missing.
   blueprints come back. The watcher now also reads the last twelve creations
   and leaves a medium-rut nudge (for example, four poems in twelve), which
   lowers KIT's preference for that medium. It enables; it does not command.
-- **Telegram:** KIT has its own bot and replies from live state. Chat cannot
-  execute changes.
+- **Telegram:** KIT has its own bot and replies from live state. Chat can queue
+  a real browse (`look up …`) or a video watch (`watch … <url>`), and the free
+  NVIDIA vision lane reads photos sent to it. It still cannot execute payments
+  or arbitrary code.
 - **Safety:** visitor and browsed text is sanitized (`_safe_external`), audited
   in `kit_external_events.jsonl`, and visitor ideas queue in `pending_ideas`;
   KIT accepts one only at a project boundary. `_write_code()` writes recipes,

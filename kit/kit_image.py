@@ -50,7 +50,13 @@ def main():
     if a.creation:
         c = next((x for x in items if x.get('id') == a.creation), None)
     else:
-        fresh = [x for x in items if not x.get('image_url')]
+        bad_topics = ('hacker news', 'github', 'wikipedia', 'arxiv',
+                      'factor xiii', 'aquifer', 'trending repositories')
+        fresh = [x for x in items if not x.get('image_url')
+                 and x.get('medium') != 'code'
+                 and not any(b in (str(x.get('title','')) + ' ' +
+                                   str(x.get('subject',''))).lower()
+                             for b in bad_topics)]
         c = fresh[-1] if fresh else None
     if not c:
         print('no creation without an image')

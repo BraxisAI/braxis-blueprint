@@ -16,7 +16,7 @@ still missing.
 
 - A deterministic **2-second** loop. No LLM in the tick.
 - Five drives: energy, curiosity, social, comfort, mastery.
-- **40+ actions** across 20 named places, including far sites (river dock, old
+- **70+ actions** across 20 named places, including far sites (river dock, old
   ruins, hilltop, south farm, north woods, east gate, west marsh, far shore,
   south ridge, old road, east ruins, north shore, west ridge, south shore, east
   ridge).
@@ -61,11 +61,13 @@ still missing.
   positions to `/api/world/obstacles`; `_avoid_step()` handles local detours and
   `_nav_path()` runs a rasterized A* grid (2-unit cells) around all obstacles,
   consuming waypoints one at a time. Direct walks stay cheap; long walks route.
-- **Sprawl:** after 10 builds, KIT takes a deliberate 55% far-site draw; the
-  world is deliberately bigger than the plaza.
+- **Sprawl:** 20 district anchors each have three satellite sites. After six
+  builds the chooser takes an outer site 82% of the time and requires a
+  10-unit gap. 49 of the first 54 builds were moved out of the central cluster;
+  five stayed central. The world is deliberately bigger than the plaza.
 - **Skill library:** `kit_skill_library.json` stores finished schemas with
-  `uses` and `successes`; `_write_code()` composes a variation from a stored
-  fragment.
+  `uses` and `successes`. The `code` action now writes a small program, runs it
+  in the sandbox, and stores the code and output as a creation.
 
 ## What KIT can make
 
@@ -93,6 +95,24 @@ still missing.
   desires, wonders, the dream, visitor messages, queued ideas, next projects and
   envision requests, plus the capability gaps and their unblock.
 
+## New layers (10-31)
+
+- **In-world chat:** `/api/world/chat` lets a visitor type to KIT from the
+  world page. KIT answers in 1–3 sentences from its mood, action, project and
+  interests; 3-second per-IP limit; logged to `kit_chat_log.jsonl`.
+- **Real code sandbox:** `kit_sandbox.py` runs generated Python in Docker with
+  no network, no host mounts, a read-only root, 512 MB/1 CPU/128 pids, nobody,
+  6s and a 12 KB output cap. The image is `braxis-kit-sandbox:1`.
+- **Echo builder:** KIT's `request build` action queues a goal; `kit_builder.py`
+  runs as Echo every 15 minutes, writes code, tests it in the sandbox, retries
+  up to three times, and returns only a working program. KIT stores it as a
+  `code` creation.
+- **Declarative action + shape plugins:** `kit_plugins.py` stores KIT-authored
+  verbs and renderable primitive shapes as data; no eval and no host code. The
+  first plugin verb is **collect dew**; the first shape is **moon gate**.
+- **World spread:** satellite sites, an 82% outer draw, a 10-unit gap, 1,400
+  instanced grass blades and 260 flowers, a **wide view** button, and a fixed
+  terrain fallback that no longer drops the outer world into a dark crater.
 ## Companion and dashboard
 
 - **Juniper, the first companion.** KIT has a `befriend` action. On
@@ -116,7 +136,8 @@ still missing.
   9–13 line free-model poems and runs hourly. It deliberately excludes watched
   video titles and real names.
 - **Build scale:** custom shapes are scaled by type (tower 3×, spire 2.6×,
-  monument 2.5×), so towers and overlooks read against the city blocks.
+  monument 2.5×), so towers and overlooks read against the city blocks. New
+  shapes: well, gate, kiln, boat, windmill, sign.
 - **Rituals:** KIT can write a 2–5 step `PRACTICE` (name + ordinary actions).
   The engine queues it, executes the steps, and records `practice_history`. A
   live ritual, **Dawn Tending** (`water plants`, `smell flowers`, `watch
@@ -156,6 +177,10 @@ still missing.
   daily reflection reads the last three.
 - **Emotional residue:** strong events leave a slow multi-hour mood tint that
   decays and blends with the six attractors.
+- **Pino rule:** repeated actions in the last 8 drop energy and pulse `repeat`
+  (joy/playfulness/anticipation/curiosity down); a new action or a new
+  medium+subject pair adds energy and pulses `novel` (surprise/curiosity/joy/
+  anticipation up). This is the selection pressure 3EYES described for Pino.
 - **Visitor memory:** `visitor_impressions` is keyed by an 8-character hash of
   the visitor IP, never the raw address. Repeat visits get a label ("the one
   who leaves flowers") and a "came back" line.
@@ -169,17 +194,18 @@ still missing.
 - **Wish list / gaps:** the page shows what KIT wants and what it cannot yet
   make; the gap list is the honest engineering backlog.
 - **Trio mailbox / watcher:** project notes go out; replies and gifted
-  blueprints come back. The watcher now also reads the last twelve creations
-  and leaves a medium-rut nudge (for example, four poems in twelve), which
-  lowers KIT's preference for that medium. It enables; it does not command.
+  blueprints come back. The watcher reads the last twelve creations and leaves
+  a medium-rut nudge (for example, four poems in twelve); the nudge is now a
+  **24-hour hard ban** on that creation medium, not just a preference change.
 - **Telegram:** KIT has its own bot and replies from live state. Chat can queue
   a real browse (`look up …`) or a video watch (`watch … <url>`), and the free
-  NVIDIA vision lane reads photos sent to it. It still cannot execute payments
-  or arbitrary code.
+  NVIDIA vision lane reads photos sent to it. It cannot execute payments or
+  arbitrary host code; generated Python runs only in the sandbox.
 - **Safety:** visitor and browsed text is sanitized (`_safe_external`), audited
   in `kit_external_events.jsonl`, and visitor ideas queue in `pending_ideas`;
-  KIT accepts one only at a project boundary. `_write_code()` writes recipes,
-  never executes code.
+  KIT accepts one only at a project boundary. Generated code runs in
+  `braxis-kit-sandbox:1`: no network, no host mounts, read-only root, 512 MB/1
+  CPU/128 pids, nobody, 6s, 12 KB output. No runtime `pip install`.
 
 ## Authored vs self-generated (honest)
 
@@ -224,9 +250,11 @@ modules are in the private recovery archive.
 - The first free TRELLIS hero GLB is live on the center plinth; more hero
   subjects and arbitrary-build swapping are the next 3D step. Most builds are
   still low-poly procedural geometry.
-- The action list is authored; KIT now authors project goals and observations,
-  but it does not yet author new mechanics or execute code. This is bounded
-  autonomy, not consciousness or independence.
+- The core action list is authored, but KIT can now add **declarative action
+  plugins** (`define` → validated name/place/effects) and **shape plugins**
+  (`design` → validated primitive parts). It can write and run code only in
+  the sandbox; it cannot install a new mechanic on the host or execute
+  payments. This is bounded autonomy, not consciousness or independence.
 - The daily reflection is one free-model call; quality varies. It writes the
   self-authored project queue and curiosity target.
 - Browsing is real page reading. Watching now works: the VM fetches TikTok with
@@ -237,7 +265,9 @@ modules are in the private recovery archive.
 - The local 8B is too slow for a blocking lane (one success at 141s, two
   timeouts); KIT uses the free remote 550B instead. TokenHarbor is configured
   with `:free` models, not paid.
-- KIT cannot execute code, payments, or account changes from chat.
+- The sandbox has numpy, pandas, matplotlib, Pillow, scipy, sympy and networkx
+  baked in. New packages require a reviewed image rebuild; no runtime pip.
+- KIT cannot execute payments or account changes from chat.
 
 ## Files
 
@@ -254,6 +284,12 @@ modules are in the private recovery archive.
 - `kit_poem.py` — free-writing poem worker; upgrades template poems.
 - `kit_study.py` — field-note worker: Wikipedia summary → free-model note.
 - `kit_emotion.py` — 30-dimensional emotion state, decay and interlocks.
+- `kit_plugins.py` — declarative action and shape plugin registry.
+- `kit_builder.py` — Echo's code builder for KIT's requests.
+- `kit_sandbox.py` — Docker package sandbox.
+- `kit_notebook.py` — KIT's instant-download notebook product.
+- `digital_guide.py` — generic instant-download guide product.
+- `kit-sandbox.Dockerfile` / `kit-sandbox-build.sh` — package image definition/rebuild.
 - `kit_memory.py` — local SQLite FTS5 episodic memory; used by reflection and
   the dashboard search.
 - `dashboard.html` — the standalone `/kit/` dashboard.

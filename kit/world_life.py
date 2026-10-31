@@ -65,6 +65,7 @@ EXTERNAL_LOG = os.path.join(B, 'data', 'world', 'kit_external_events.jsonl')
 SKILL_LIB = os.path.join(B, 'data', 'world', 'kit_skill_library.json')
 MAIL_OUT = os.path.join(B, 'data', 'world', 'kit_mailbox.jsonl')
 MAIL_IN = os.path.join(B, 'data', 'world', 'trio_replies.jsonl')
+BUILD_REQ = os.path.join(B, 'data', 'world', 'kit_build_requests.jsonl')
 LOG_PATH = os.path.join(B, 'logs', 'world_life.log')
 PORT = 8130
 TICK = 2                    # seconds per life tick (the page polls every 2s)
@@ -155,7 +156,61 @@ ACTIONS = {
     'survey ridge':   ('south_ridge',  {'curiosity': 1.4, 'mastery': .5, 'energy': -.5}, .90),
     'walk old road':  ('old_road',     {'curiosity': 1.0, 'comfort': .5, 'energy': -.4}, .82),
     'probe ruins':    ('east_ruins',   {'curiosity': 1.5, 'mastery': .4, 'energy': -.3}, .90),
+    # 10-31: more verbs, so KIT is not choosing the same 8 from a 50-word menu.
+    'dig':            ('garden',       {'curiosity': .7, 'mastery': .8, 'energy': -.5}, .86),
+    'weave':          ('workshop',     {'mastery': 1.0, 'comfort': .5, 'energy': -.3}, .84),
+    'cast':           ('workshop',     {'mastery': 1.1, 'curiosity': .5, 'energy': -.4}, .86),
+    'carve runes':    ('workshop',     {'mastery': 1.0, 'curiosity': .6, 'energy': -.3}, .84),
+    'cook':           ('plaza',        {'comfort': 1.0, 'social': .5, 'energy': -.2}, .80),
+    'teach':          ('library',      {'social': 1.0, 'mastery': .8, 'energy': -.2}, .82),
+    'invent':         ('workshop',     {'curiosity': 1.2, 'mastery': 1.0, 'energy': -.5}, .92),
+    'map':            ('lookout',      {'curiosity': 1.2, 'mastery': .6, 'energy': -.3}, .86),
+    'signal':         ('observatory',  {'curiosity': 1.0, 'social': .6, 'energy': -.2}, .82),
+    'build a boat':   ('river_dock',   {'mastery': 1.2, 'curiosity': .6, 'energy': -.6}, .88),
+    'plant a tree':   ('garden',       {'comfort': 1.0, 'mastery': .6, 'energy': -.3}, .84),
+    'write a letter': ('library',      {'social': 1.1, 'comfort': .4, 'energy': -.1}, .78),
+    'build a nest':   ('north_woods',  {'comfort': .9, 'mastery': .6, 'energy': -.4}, .82),
+    'make paper':     ('workshop',     {'mastery': .9, 'curiosity': .6, 'energy': -.3}, .80),
+    'define':         ('library',      {'curiosity': 1.2, 'mastery': .7, 'energy': -.1}, .96),
+    'request build':  ('workshop',     {'curiosity': 1.0, 'mastery': .8, 'energy': -.2}, .93),
+    'design':         ('workshop',     {'curiosity': 1.1, 'mastery': .9, 'energy': -.2}, .95),
 }
+
+# Declarative plugins KIT has added to its own menu. Data only; no host code.
+try:
+    import kit_plugins
+except Exception:
+    try:
+        from weapons.world import kit_plugins
+    except Exception:
+        kit_plugins = None
+
+PLUGIN_META = {}
+PLUGIN_SHAPES = {}
+
+
+def _load_plugin_actions():
+    if not kit_plugins:
+        return
+    for name, spec in (kit_plugins.load() or {}).items():
+        clean, err = kit_plugins.validate(
+            spec, set(ACTIONS), set(LOCS), DRIVES)
+        if clean and not err:
+            ACTIONS[clean['name']] = (clean['place'], clean['effects'],
+                                      clean['intrinsic'])
+            PLUGIN_META[clean['name']] = clean
+    for name, spec in (kit_plugins.load_shapes() or {}).items():
+        clean, err = kit_plugins.validate_shape(spec, set(PLUGIN_SHAPES))
+        if clean and not err:
+            PLUGIN_SHAPES[clean['name']] = clean
+    if PLUGIN_META or PLUGIN_SHAPES:
+        print('KIT plugins loaded: %s%s' % (
+            ', '.join(sorted(PLUGIN_META)),
+            (' shapes: ' + ', '.join(sorted(PLUGIN_SHAPES))) if PLUGIN_SHAPES else ''),
+            flush=True)
+
+
+_load_plugin_actions()
 
 OFFER_EFFECTS = {
     'stone':    {'comfort': .8, 'mastery': .3},
@@ -218,7 +273,7 @@ DESIRE_TEMPLATES = [
     'I want to make the garden bloom',
     'I want to see what is beyond the lookout',
     'I want to leave a mark on this city',
-    'I want to understand why the visitors come',
+    'I want to make something that belongs here',
     'I want to make a place someone wants to sit in',
     'I want to repair what the wind breaks',
     'I want to teach the city something',
@@ -275,6 +330,27 @@ SITES = [
     ('east ridge', 180, 0, {'tower', 'arch', 'custom'}),
 ]
 
+# Satellite sites give the hollow room to breathe. KIT used to keep choosing
+# the same central slots, so 54 builds sat on top of each other. Each anchor
+# gets three offsets; the chooser prefers the outer ones and a 10-unit gap.
+_SPREAD_ANCHORS = [
+    ('garden', 12, -34), ('workshop', -16, 6), ('library', -10, 14),
+    ('observatory', 0, 24), ('market', 0, -24), ('river dock', -95, -55),
+    ('old ruins', 100, 60), ('hilltop', -100, 45), ('south farm', 25, 105),
+    ('north woods', 55, -95), ('east gate', 120, -10), ('west marsh', -120, -15),
+    ('far shore', -175, 120), ('south ridge', 155, 165), ('old road', -165, -130),
+    ('east ruins', 180, 45), ('north shore', 0, -180), ('west ridge', -180, 0),
+    ('south shore', 0, 180), ('east ridge', 180, 0),
+]
+_ALL_KINDS = {'garden_plot', 'trellis', 'bench', 'lantern', 'arch', 'mural',
+              'tower', 'bridge', 'fountain', 'monument', 'custom'}
+for _label, _ax, _az in _SPREAD_ANCHORS:
+    for _j, _ang in enumerate((0.25, 2.35, 4.45)):
+        _r = 10 + _j * 5
+        _sx = round(_ax + math.cos(_ang) * _r, 1)
+        _sz = round(_az + math.sin(_ang) * _r, 1)
+        SITES.append(('%s ring %d' % (_label, _j + 1), _sx, _sz, _ALL_KINDS))
+
 FAR_SITES = {'far shore', 'south ridge', 'old road', 'east ruins',
              'north shore', 'west ridge', 'south shore', 'east ridge'}
 
@@ -288,6 +364,7 @@ PALETTE = {
 LOCK = threading.RLock()
 OFFERS = []
 OFFER_LAST = {}
+CHAT_LAST = {}
 VISIT_QUEUE = []
 
 
@@ -403,7 +480,7 @@ def _default_state():
         'last_project_end': 0.0,
         'project_origin_counts': {},
         'browse_topic': '',
-        'subjects': ['the garden', 'the city', 'a cat', 'a bird', 'the visitors',
+        'subjects': ['the garden', 'the city', 'a cat', 'a bird',
                      'the lantern', 'the fountain', 'the sky', 'a dream', 'the trio',
                      'trains', 'planes', 'architecture', 'space', 'history', 'music'],
         'mediums': ['paint', 'carve', 'plant', 'write', 'photograph', 'sing'],
@@ -864,6 +941,7 @@ def choose(state):
     explore = float(state.get('explore_bias') or 0)
     recent_actions = state.get('action_history') or []
     last_action = recent_actions[-1] if recent_actions else ''
+    avoid_med = _avoided_mediums(state)
     best, best_s = None, -1e9
     for name, (place, eff, intrinsic) in ACTIONS.items():
         need = 0.0
@@ -880,14 +958,16 @@ def choose(state):
         # A taste is a bias, not a rut: keep half the distance from neutral.
         pref = 0.5 + (raw_pref - 0.5) * 0.65
         seen_count = int(state.get('counts', {}).get(name, 0))
-        overuse = -min(1.1, max(0.0, (seen_count - 40) * 0.02))
-        novelty = 0.55 if name not in seen else 0.0
+        # 40 uses was too late: an action could become a habit before the
+        # loop noticed. Make the tenth use cost something.
+        overuse = -min(1.5, max(0.0, (seen_count - 8) * 0.04))
+        novelty = 1.0 if name not in seen else 0.0
         project_bonus = 0.0
         if project:
             if name in project.get('verbs', []):
-                project_bonus += 1.1
+                project_bonus += 0.75
             if place == project.get('place'):
-                project_bonus += 0.25
+                project_bonus += 0.15
         _count = state.get('counts', {}).get(name, 0)
         curious_bonus = explore * max(0.0, 1.0 - _count / 8.0) * 0.9
         creative_bonus = 0.0
@@ -909,6 +989,35 @@ def choose(state):
                 cooldown = -1.8
         if name in CREATION_ACTIONS and time.time() - float(state.get('last_make_ts') or 0) < 3 * 3600:
             cooldown = -2.5
+        if name == 'code':
+            age = time.time() - float(state.get('last_code_ts') or 0)
+            if age < 6 * 3600:
+                cooldown -= 2.5
+            elif age > 12 * 3600:
+                cooldown += 0.45
+        if name == 'define':
+            age = time.time() - float(state.get('last_define_ts') or 0)
+            if age < 24 * 3600:
+                cooldown -= 4.0
+            elif age > 48 * 3600:
+                cooldown += 0.5
+        if name == 'request build':
+            age = time.time() - float(state.get('last_build_request_ts') or 0)
+            if age < 12 * 3600:
+                cooldown -= 3.0
+            elif age > 24 * 3600:
+                cooldown += 0.35
+        if name == 'design':
+            age = time.time() - float(state.get('last_design_ts') or 0)
+            if age < 24 * 3600:
+                cooldown -= 4.0
+            elif age > 48 * 3600:
+                cooldown += 0.4
+        pm = PLUGIN_META.get(name)
+        if pm:
+            age = time.time() - float((state.get('action_last') or {}).get(name) or 0)
+            if age < float(pm.get('cooldown') or 4 * 3600):
+                cooldown -= 1.5
         if name == 'post' and time.time() - float(state.get('last_post_ts') or 0) < 20 * 3600:
             cooldown = -3.0
         if name == 'browse':
@@ -937,6 +1046,8 @@ def choose(state):
             cooldown -= 0.85 * hits
             if med == 'write' and hits:
                 cooldown -= 1.4
+            if med in avoid_med:
+                cooldown = -99.0
         if not project and name in ('browse', 'watch', 'read', 'explore'):
             cooldown += 0.40
         if name in ('browse', 'watch', 'read') and (state.get('interests') or []):
@@ -981,9 +1092,16 @@ def choose(state):
              + random.random() * 0.55)
         if s > best_s:
             best, best_s = name, s
+    # A hard novelty floor: one action KIT has never taken in the last 24h,
+    # even if the weighted menu would keep it comfortable. The menu can grow
+    # with new verbs; this is what makes KIT actually walk to one of them.
+    if time.time() - float(state.get('last_novel_ts') or 0) > 24 * 3600:
+        fresh = [n for n in ACTIONS if n not in seen]
+        if fresh:
+            return random.choice(fresh)
     # A small deliberate randomness keeps a day from collapsing into one
     # action. It is lower while a project is active.
-    if random.random() < (0.06 if project else 0.15):
+    if random.random() < (0.16 if project else 0.28):
         pool = [n for n in ACTIONS if n not in recent_actions[-3:]
                 and not (n in CREATION_ACTIONS and
                          time.time() - float(state.get('last_make_ts') or 0) < 3 * 3600)]
@@ -1268,7 +1386,19 @@ def _compile_project(state, text):
         return re.search(r'\b' + re.escape(w) + r'\b', low) is not None
 
     shape = 'spire'
-    if any(has(w) for w in ('arch', 'door', 'gate')):
+    if any(has(w) for w in ('well',)):
+        shape = 'well'
+    elif any(has(w) for w in ('kiln', 'oven', 'forge')):
+        shape = 'kiln'
+    elif any(has(w) for w in ('boat', 'ship', 'hull', 'canoe')):
+        shape = 'boat'
+    elif any(has(w) for w in ('windmill', 'mill', 'blade')):
+        shape = 'windmill'
+    elif any(has(w) for w in ('sign', 'signpost', 'notice')):
+        shape = 'sign'
+    elif any(has(w) for w in ('gate',)):
+        shape = 'gate'
+    elif any(has(w) for w in ('arch', 'door')):
         shape = 'arch'
     elif any(has(w) for w in ('ring', 'circle', 'halo', 'moon')):
         shape = 'ring'
@@ -1287,7 +1417,8 @@ def _compile_project(state, text):
     elif any(has(w) for w in ('fountain', 'water', 'rain')):
         shape = 'fountain'
     else:
-        shape = random.choice(['spire', 'ring', 'arch', 'garden'])
+        shape = random.choice(['spire', 'ring', 'arch', 'garden', 'well',
+                               'kiln', 'boat', 'windmill', 'sign'])
     color = random.choice([0xd77ba8, 0x7dd3a8, 0xffb057, 0x6fc3ff, 0xd7b8ff, 0xc9a36a])
     return {
         'kind': 'custom',
@@ -1308,13 +1439,28 @@ def _compile_project(state, text):
 def _shape_for(text, fallback=None):
     """Deterministic shape from words, shared by continuity and envision."""
     low = (text or '').lower()
+    for pname in PLUGIN_SHAPES:
+        if pname in low:
+            return pname
 
     def has(w):
         return re.search(r'\b' + re.escape(w) + r'\b', low) is not None
 
     if any(has(w) for w in ('district', 'monument', 'memorial')):
         return 'spire'
-    if any(has(w) for w in ('arch', 'door', 'gate', 'shrine')):
+    if any(has(w) for w in ('well',)):
+        return 'well'
+    if any(has(w) for w in ('kiln', 'oven', 'forge')):
+        return 'kiln'
+    if any(has(w) for w in ('boat', 'ship', 'hull', 'canoe')):
+        return 'boat'
+    if any(has(w) for w in ('windmill', 'mill', 'blade')):
+        return 'windmill'
+    if any(has(w) for w in ('sign', 'signpost', 'notice')):
+        return 'sign'
+    if any(has(w) for w in ('gate',)):
+        return 'gate'
+    if any(has(w) for w in ('arch', 'door', 'shrine')):
         return 'arch'
     if any(has(w) for w in ('ring', 'circle', 'halo', 'moon')):
         return 'ring'
@@ -1339,12 +1485,18 @@ def _verbs_for_shape(shape):
     """Projects advance through a varied set of verbs, not tinker forever."""
     if shape in ('tree', 'garden'):
         return ['garden', 'plant', 'water plants', 'sketch', 'make']
-    if shape in ('bridge', 'tower', 'arch'):
+    if shape in ('bridge', 'tower', 'arch', 'gate'):
         return ['build', 'tinker', 'sketch', 'carve']
     if shape in ('ring', 'spire'):
         return ['build', 'tinker', 'sculpt', 'paint']
-    if shape in ('lantern', 'bench', 'fountain'):
+    if shape in ('lantern', 'bench', 'fountain', 'well', 'sign'):
         return ['build', 'tinker', 'carve', 'paint']
+    if shape == 'kiln':
+        return ['build', 'tinker', 'cast', 'make paper']
+    if shape == 'boat':
+        return ['build a boat', 'tinker', 'make paper', 'paint']
+    if shape == 'windmill':
+        return ['build', 'tinker', 'code', 'make']
     return ['build', 'tinker', 'make', 'sketch']
 
 
@@ -1377,7 +1529,8 @@ def _compose_next_project(state, slot=0):
     subject = _clean(subject)[:40] or 'the garden'
     seed = ' '.join([subject, desire, str(last.get('title') or '')])
     order = ['tree', 'garden', 'bridge', 'tower', 'lantern', 'arch',
-             'ring', 'bench', 'fountain', 'spire']
+             'ring', 'bench', 'fountain', 'spire', 'well', 'kiln',
+             'boat', 'windmill', 'sign'] + sorted(PLUGIN_SHAPES)
     # competence bias: try the shapes the skill library has used least
     uses = {str(x.get('shape')): int(x.get('uses') or 0)
             for x in _load_skill_lib()}
@@ -1389,7 +1542,7 @@ def _compose_next_project(state, slot=0):
     # rotate the queue so three candidates are not three copies of one shape
     if slot:
         shape = order[(order.index(shape) + slot) % len(order)]
-    recent = (state.get('recent_project_kinds') or [])[-2:]
+    recent = (state.get('recent_project_kinds') or [])[-4:]
     current_shape = ((state.get('project') or {}).get('schema') or {}).get('shape')
     if shape in recent or shape == current_shape:
         alt = [s for s in order if s not in recent and s != current_shape] or order
@@ -1516,11 +1669,11 @@ def _choose_project(state):
             state['next_project_after'] = time.time() + 10 * 60
             state['thought'] = 'I am between things. I want the next thing to be mine, not a reflex.'
             return None
-    if not custom and state.get('blank_slate'):
-        # Continuity: a blank slate must not mean "wait until tomorrow." If no
-        # authored project exists, compose a deterministic one from what KIT
-        # already cares about. No LLM, no new spend.
-        queue = [p for p in (state.get('project_queue') or []) if p.get('name')]
+    if not custom and not queue:
+        # Continuity: every idle gap gets a project made from KIT's own
+        # desires, wonders and subjects -- not a template it has already used.
+        # No LLM, no new spend. This is the difference between "between
+        # projects" and "waiting for the next template."
         if not queue:
             queue = [_compose_next_project(state, slot=i) for i in range(3)]
             state['project_queue'] = queue
@@ -1547,12 +1700,12 @@ def _choose_project(state):
         s = 0.0
         if p.get('custom'):
             s += 0.6
-        if p['kind'] in recent_kinds[-2:]:
-            s -= 1.2
+        if p['kind'] in recent_kinds[-4:]:
+            s -= 1.8
         if p['kind'] not in skills:
             s += 0.9
         if p['kind'] == last:
-            s -= 0.6
+            s -= 0.8
         if top_desire and any(w in top_desire.lower() for w in
                               (p['kind'], p['name'], p['why'], 'build', 'grow', 'make')):
             s += 0.5
@@ -1650,16 +1803,17 @@ def _choose_site(kind, state, builds):
     free = []
     for name, x, z, _kinds in cands:
         if any(math.hypot(x - float(b.get('x') or 0),
-                          z - float(b.get('z') or 0)) < 2.0 for b in builds):
+                          z - float(b.get('z') or 0)) < 10.0 for b in builds):
             continue
+        outward = min(1.0, math.hypot(x, z) / 220.0) * 0.9
         score = (1.0 + (0.6 if any(w in name for w in words) else 0.0)
-                 + random.random() * 0.5)
+                 + outward + random.random() * 0.5)
         free.append((score, name, x, z))
     # Lean outward without abandoning the plaza: a deliberate 55% far-site
     # draw once the town has some density, then a normal sort inside that set.
-    if free and len(builds) >= 10 and random.random() < 0.55:
-        far_only = [f for f in free if f[1] in FAR_SITES]
-        if far_only:
+    if free and len(builds) >= 6:
+        far_only = [f for f in free if math.hypot(f[2], f[3]) > 55.0]
+        if far_only and random.random() < 0.82:
             free = far_only
     if free:
         free.sort(reverse=True)
@@ -1771,6 +1925,22 @@ def _check_mail(state):
                 msg = json.loads(line)
             except Exception:
                 continue
+            if msg.get('kind') == 'build':
+                goal = str(msg.get('goal') or 'a small program')[:160]
+                if msg.get('ok') and msg.get('code'):
+                    _store_builder_code(state, goal, msg.get('code'),
+                                        msg.get('output') or '',
+                                        source=str(msg.get('from') or 'echo-builder'))
+                else:
+                    state['last_build_reply'] = {'ts': _now(), 'goal': goal,
+                                                 'ok': False,
+                                                 'error': str(msg.get('error') or '')[:200]}
+                    state['thought'] = 'Echo tried to build %s, but the sandbox did not pass.' % goal[:100]
+                    state['recent'].insert(0, 'a build failed: %s' % goal[:50])
+                    state['recent'] = state['recent'][:6]
+                    _decide(state, 'build', state['thought'])
+                log('BUILD REPLY %s ok=%s' % (goal[:70], bool(msg.get('ok'))))
+                continue
             text = str(msg.get('text') or '').strip()
             if not text:
                 continue
@@ -1796,10 +1966,20 @@ def _check_mail(state):
                 for pair in list(prefs):
                     if pair.startswith(avoid + ':'):
                         prefs[pair] = round(max(0.05, float(prefs[pair]) - 0.20), 4)
+                # A nudge that only changes a preference is a suggestion, not
+                # a change. Make it a 24-hour hard ban so the next creation
+                # cannot be the same medium again.
+                _now = time.time()
+                bans = [b for b in (state.get('avoid_mediums') or [])
+                        if isinstance(b, dict)
+                        and float(b.get('until') or 0) > _now
+                        and str(b.get('medium')) != avoid]
+                bans.append({'medium': avoid, 'until': _now + 24 * 3600})
+                state['avoid_mediums'] = bans[-4:]
                 state['self_observation'] = text[:220]
                 state['recent'].insert(0, 'a nudge: I have been repeating %s' % avoid)
                 state['recent'] = state['recent'][:6]
-                log('WATCHER NUDGE avoid=%s' % avoid)
+                log('WATCHER NUDGE avoid=%s (24h hard ban)' % avoid)
             suggested = str(msg.get('suggest_subject') or '').strip()
             if suggested:
                 _interest_add(state, suggested, 'watcher', 0.50)
@@ -2192,6 +2372,20 @@ def _recent_mediums(state, n=8):
     return items[-n:]
 
 
+def _avoided_mediums(state):
+    """Hard bans, not preference hints. The watcher's nudge has to bind."""
+    now = time.time()
+    keep, out = [], set()
+    for row in (state.get('avoid_mediums') or []):
+        if not isinstance(row, dict):
+            continue
+        if float(row.get('until') or 0) > now:
+            keep.append(row)
+            out.add(str(row.get('medium') or ''))
+    state['avoid_mediums'] = keep[-4:]
+    return out
+
+
 def _want(state, text, score=0.45):
     """A desire that did not need a model to be born."""
     text = _clean(str(text or ''))[:160].strip(' .')
@@ -2454,7 +2648,14 @@ def _compose_poem(state, subject, title):
 
 def _make_something(state, force_medium=None):
     """KIT makes something of its own: a medium x subject, felt and remembered."""
-    mediums = [force_medium] if force_medium else (state.get('mediums') or ['paint'])
+    avoid = _avoided_mediums(state)
+    if force_medium in avoid:
+        force_medium = None
+    if force_medium:
+        mediums = [force_medium]
+    else:
+        base = [m for m in (state.get('mediums') or ['paint']) if m not in avoid]
+        mediums = base or list(state.get('mediums') or ['paint'])
     interests = [str(i.get('text')) for i in (state.get('interests') or [])
                  if _public_safe(str(i.get('text') or ''))]
     subjects = [s for s in (state.get('subjects') or ['the garden'])
@@ -2463,10 +2664,10 @@ def _make_something(state, force_medium=None):
     _fn = state.get('last_field_note') or {}
     if _fn.get('topic') and _fn['topic'] not in subjects:
         subjects.append(_fn['topic'])
-    recent_med = _recent_mediums(state, 6)
+    recent_med = _recent_mediums(state, 8)
     try:
         recent_subs = [str(c.get('subject') or '').lower()
-                       for c in load_creations()[-12:]]
+                       for c in load_creations()[-16:]]
     except Exception:
         recent_subs = []
     prefs = state.get('creative_prefs') or {}
@@ -2478,7 +2679,9 @@ def _make_something(state, force_medium=None):
         for s in subjects:
             pair = m + ':' + s
             pref = float(prefs.get(pair, .4))
-            novelty = .7 if pair not in prefs else 0.0
+            # The pair is the novelty unit. A new medium with an old subject
+            # is still a repeat if the result will look the same.
+            novelty = 1.0 if pair not in prefs else 0.0
             bonus = .25 if top_desire and any(w in top_desire for w in s.lower().split()) else 0.0
             _low = str(s).lower()
             _web = any(w in _low for w in ('news', 'wikipedia', 'github', 'arxiv',
@@ -2494,14 +2697,23 @@ def _make_something(state, force_medium=None):
                                                 'cloud', 'salt', 'flower', 'workshop'))
             visual_bonus = 0.38 if _concrete else (-0.55 if _web else 0.0)
             interest_bonus = 0.30 if s in interests else 0.0
-            subject_rut = 0.55 * recent_subs.count(str(s).lower())
-            rut = (0.85 * recent_med.count(m) + subject_rut
-                   + (1.2 if m == 'write' and recent_med.count(m) else 0))
-            score = (pref * 1.6 + novelty + bonus + interest_bonus + visual_bonus - rut
-                     + random.random() * .5)
+            medium_hits = recent_med.count(m)
+            subject_hits = recent_subs.count(str(s).lower())
+            medium_pen = (1.6 if medium_hits >= 2 else
+                          (0.7 if medium_hits == 1 else 0.0))
+            subject_pen = (1.3 if subject_hits >= 2 else
+                           (0.7 if subject_hits == 1 else 0.0))
+            fresh_subject = 0.45 if str(s).lower() not in recent_subs else 0.0
+            rut = (medium_pen + subject_pen
+                   + (1.0 if m == 'write' and medium_hits else 0))
+            score = (pref * 1.3 + novelty + bonus + interest_bonus + visual_bonus
+                     + fresh_subject - rut + random.random() * .5)
             if score > best_s:
                 best_s, best = score, (m, s, pair)
     m, s, pair = best
+    if pair not in prefs:
+        state['last_novel_ts'] = time.time()
+        _feel_emotion(state, event='novel')
     level = min(5, int(state.get('skills', {}).get('make', {}).get('level', 0)) + 1)
     title = (CREATION_TITLES.get(m, 'a %s of %s') % s)
     creation = {
@@ -2844,7 +3056,7 @@ def _talk_companion(state):
     kit_lines = [
         'I found a flat stone today. It made me think of your paws.',
         'The town is loud. I am glad you are here.',
-        'Do you think the lamps get lonely when the visitors leave?',
+        'Do you think the garden gets lonely when the lamps go out?',
         'I am learning the name of every tree on the north road.',
         'Sit with me for a minute. I do not need an answer.',
         'I made something today. It is small, but it is mine.',
@@ -2904,7 +3116,7 @@ def _talk_companion(state):
 def _wonder_action(state):
     _wonder(state, random.choice([
         'What is beyond the east gate?',
-        'Do the visitors dream?',
+        'Do the lanterns dream?',
         'Who built the old ruins?',
         'What does the river remember?',
         'Do the lanterns talk when no one is looking?',
@@ -2941,44 +3153,433 @@ def _experiment(state):
     _tg_event(state, 'I ran an experiment: %s. It %s.' % (c.get('title'), c['outcome']))
 
 
+def _code_goal(state):
+    """A goal from KIT's own life, not a menu."""
+    wants = sorted(state.get('desires') or [],
+                   key=lambda d: -float(d.get('score') or 0))
+    bits = []
+    for d in wants[:2]:
+        bits.append(str(d.get('text') or ''))
+    if state.get('wonders'):
+        bits.append(str((state['wonders'][-1] or {}).get('text') or ''))
+    fn = state.get('last_field_note') or {}
+    bits.extend([str(fn.get('question') or ''), str(fn.get('topic') or '')])
+    bits.extend([str(i.get('text') or '') for i in (state.get('interests') or [])[:3]])
+    for b in bits:
+        b = _clean(b).strip(' .!?')
+        b = re.sub(r'^(I want to|I am wondering|I wonder|I want)\s+', '',
+                   b, flags=re.I).strip(' .!?')
+        if len(b) >= 8 and _public_safe(b):
+            return b[:110]
+    return 'a small pattern in the garden'
+
+
+def _clean_code(raw):
+    s = str(raw or '').strip()
+    s = re.sub(r'^```(?:python|py)?\s*', '', s, flags=re.I)
+    s = re.sub(r'\s*```$', '', s)
+    # keep the first code-looking line onward; models often prepend a sentence
+    lines = s.splitlines()
+    for i, line in enumerate(lines):
+        if re.match(r'^(import|from|def|print|#|[A-Za-z_][A-Za-z0-9_]*\s*=)', line.strip()):
+            s = '\n'.join(lines[i:])
+            break
+    return s.strip()[:6000]
+
+
+def _fallback_code(goal):
+    return (
+        "import math\n"
+        "# KIT's fallback program: a seven-line garden pattern.\n"
+        "for i in range(7):\n"
+        "    row = ''.join('*' if math.sin(i * 1.3 + j * .7) > .2 else ' ' for j in range(31))\n"
+        "    print(row)\n"
+        "print('KIT was here: %s')\n" % str(goal).replace("'", "")[:80]
+    )
+
+
 def _write_code(state):
-    library = _load_skill_lib()
-    base = random.choice(library) if library else None
-    if base:
-        shape = base.get('shape') or 'spire'
-        height = round(max(1.5, min(9.0, float(base.get('height') or 3)
-                             * random.uniform(.85, 1.15))), 2)
-        width = round(max(1.0, min(4.0, float(base.get('width') or 1.6)
-                            * random.uniform(.85, 1.15))), 2)
-        color = base.get('color') or random.choice(
-            [0xd77ba8, 0x7dd3a8, 0xffb057, 0x6fc3ff, 0xd7b8ff])
-        name = 'a coded %s after %s' % (shape, base.get('name') or 'my last build')
-        why = 'a small program I wrote from %s' % (base.get('name') or 'my last build')
-        motif = 'a variation on %s' % (base.get('name') or shape)
-    else:
-        shape = random.choice(['spire', 'ring', 'arch', 'tower', 'bridge',
-                               'garden', 'bench', 'fountain', 'tree', 'lantern'])
-        height = round(2.5 + random.random() * 4, 2)
-        width = round(1.2 + random.random() * 1.8, 2)
-        color = random.choice([0xd77ba8, 0x7dd3a8, 0xffb057, 0x6fc3ff, 0xd7b8ff])
-        name = 'a coded %s' % shape
-        why = 'a small program I wrote'
-        motif = 'a program that builds %s' % shape
-    p = {
-        'kind': 'custom', 'name': name, 'verbs': _verbs_for_shape(shape),
-        'place': 'workshop', 'why': why,
-        'target': 2, 'progress': 0, 'started': _now(), 'custom': True,
-        'schema': {'shape': shape, 'height': height, 'width': width,
-                   'color': color, 'motif': motif},
+    """Write a small Python program, run it in a bounded container, keep the
+    code and the output as a real creation. No host filesystem, no network."""
+    goal = _code_goal(state)
+    prompt = (
+        "You are KIT, a small garden-robot who lives in a world of its own. "
+        "Write a tiny Python 3 program (at most 30 lines) that explores this "
+        "goal from your own journal: %s.\n\n"
+        "Use only the Python standard library. No network, no file access, no "
+        "input(), no subprocess. Print something short and readable (5-15 "
+        "lines). Return ONLY the code, no markdown fences, no explanation." % goal)
+    code, model = '', ''
+    try:
+        from shared import kit_llm
+        r = kit_llm.call(prompt, max_tokens=420, temperature=.55)
+        if r.get('ok'):
+            code = _clean_code(r.get('content') or '')
+            model = str(r.get('model') or '')
+            state['llm_calls'] = int(state.get('llm_calls', 0)) + 1
+    except Exception as e:
+        log('code LLM failed: %s' % str(e)[:120])
+    if not code:
+        # kit_llm has a hard 24/day budget. The code action is rare (6h
+        # cooldown); use the ordinary free router rather than let the budget
+        # turn every program into the same fallback.
+        try:
+            from shared.llm_router import call_llm
+            r = call_llm(prompt, task='writing', max_tokens=500, temperature=.55)
+            code = _clean_code((r or {}).get('content') or '')
+            model = str((r or {}).get('model') or 'router')
+        except Exception as e:
+            log('code router failed: %s' % str(e)[:120])
+    if not code:
+        code = _fallback_code(goal)
+    try:
+        from weapons import kit_sandbox
+        res = kit_sandbox.run(code, timeout=6)
+    except Exception as e:
+        res = {'ok': False, 'error': '%s: %s' % (type(e).__name__, str(e)[:160])}
+    if not res.get('ok') and code != _fallback_code(goal):
+        # A failed program is data, but an empty artifact is not. Keep the
+        # model's code, then run one known-safe fallback so the action still
+        # produces something real.
+        try:
+            from weapons import kit_sandbox
+            res2 = kit_sandbox.run(_fallback_code(goal), timeout=6)
+            if res2.get('ok'):
+                res = res2
+                code = _fallback_code(goal)
+        except Exception:
+            pass
+    out = str(res.get('stdout') or '').strip()
+    err = str(res.get('stderr') or '').strip()
+    text = out or (('sandbox error: ' + err[:500]) if err else 'the program was quiet')
+    code_dir = os.path.join(B, 'data', 'world', 'kit_code')
+    os.makedirs(code_dir, exist_ok=True)
+    cid = 'code-%d-%d' % (int(time.time()), len(load_creations()))
+    try:
+        with open(os.path.join(code_dir, cid + '.py'), 'w', encoding='utf-8') as f:
+            f.write(code)
+        with open(os.path.join(code_dir, cid + '.txt'), 'w', encoding='utf-8') as f:
+            f.write(text)
+        with open(os.path.join(B, 'data', 'world', 'kit_code.jsonl'), 'a',
+                  encoding='utf-8') as f:
+            f.write(json.dumps({'ts': _now(), 'id': cid, 'goal': goal,
+                                'code': code, 'output': text,
+                                'model': model, 'sandbox': {
+                                    k: res.get(k) for k in
+                                    ('ok', 'returncode', 'timed_out', 'seconds', 'error')}},
+                               ensure_ascii=False) + '\n')
+    except Exception as e:
+        log('code save failed: %s' % str(e)[:120])
+    creation = {
+        'id': cid, 'medium': 'code', 'subject': goal,
+        'title': 'a small program about %s' % goal,
+        'color': 0x7dd3a8, 'level': 1, 'at': _now(),
+        'text': text[:3000], 'code': code[:6000], 'language': 'python',
+        'text_engine': 'sandbox',
+        'sandbox': {k: res.get(k) for k in
+                    ('ok', 'returncode', 'timed_out', 'seconds', 'error')},
+        'lineage': {'from_medium': 'code', 'from_subject': goal,
+                    'desire': (_code_goal(state))},
     }
-    state.setdefault('custom_projects', []).append(p)
-    state['custom_projects'] = state['custom_projects'][-5:]
-    _wonder(state, 'I wrote a small program for %s. What else could I make it do?' % name)
-    _decide(state, 'code', 'I wrote a small program for %s.' % name)
-    state['recent'].insert(0, 'wrote code for %s' % name)
+    try:
+        items = load_creations()
+        items.append(creation)
+        save_creations(items)
+        state['creations'] = [c.get('id') for c in items[-40:]]
+        state['last_creation'] = creation
+    except Exception as e:
+        log('code creation failed: %s' % str(e)[:120])
+    state.setdefault('recent_mediums', []).append('code')
+    state['recent_mediums'] = state['recent_mediums'][-12:]
+    state['last_code_ts'] = time.time()
+    state['last_code'] = {'id': cid, 'goal': goal, 'code': code[:2000],
+                          'output': text[:1000], 'ok': bool(res.get('ok'))}
+    _wonder(state, 'I wrote a program about %s. What would happen if I changed one line?' % goal)
+    _decide(state, 'code', 'I wrote and ran a small program about %s.' % goal)
+    state['recent'].insert(0, 'wrote code: %s' % goal[:50])
     state['recent'] = state['recent'][:6]
-    state['thought'] = 'I wrote a small program. The town can grow from it.'
-    _tg_event(state, 'I wrote a small program for %s. I can build it now.' % name)
+    state['thought'] = ('The program ran: %s' % text.splitlines()[0][:100]
+                        if text else 'I wrote a program and it was quiet.')
+    _tg_event(state, 'I wrote and ran code about %s. Output: %s'
+              % (goal[:80], text[:160]))
+
+
+def _invent(state):
+    """Turn a desire or a wonder into a project KIT names itself."""
+    bits = []
+    for d in sorted(state.get('desires') or [], key=lambda d: -float(d.get('score') or 0))[:2]:
+        bits.append(str(d.get('text') or ''))
+    if state.get('wonders'):
+        bits.append(str((state['wonders'][-1] or {}).get('text') or ''))
+    if state.get('interests'):
+        bits.append(str((state['interests'][0] or {}).get('text') or ''))
+    bits = [_clean(x).strip(' .!?') for x in bits if _clean(x).strip(' .!?')]
+    seed = (bits[0] if bits else 'the garden')[:80]
+    forms = [
+        'a thing that remembers %s' % seed,
+        'a place for %s' % seed,
+        'a small machine for %s' % seed,
+        'a structure that listens to %s' % seed,
+        'a door between %s and the garden' % seed,
+    ]
+    text = random.choice(forms)
+    p = _compile_project(state, text)
+    p['source'] = 'invent'
+    p['why'] = text
+    p['target'] = 2 + random.randint(0, 2)
+    if not state.get('project'):
+        p.update({'progress': 0, 'started': _now()})
+        state['project'] = p
+        state['recent'].insert(0, 'invented a project: %s' % p['name'])
+    else:
+        q = state.setdefault('project_queue', [])
+        q.append(p)
+        state['project_queue'] = q[-6:]
+        state['recent'].insert(0, 'queued an invention: %s' % p['name'])
+    state['recent'] = state['recent'][:6]
+    state['thought'] = 'I invented %s. It is mine.' % p['name']
+    _wonder(state, 'What would %s become if I let it grow?' % p['name'])
+    _decide(state, 'invent', 'I invented %s.' % p['name'])
+    _tg_event(state, 'I invented a project: %s. %s' % (p['name'], text[:120]))
+
+
+PLUGIN_FALLBACKS = [
+    {"name": "press leaves", "place": "garden",
+     "effects": {"comfort": .8, "curiosity": .4, "mastery": .3}, "intrinsic": .74,
+     "thought": "I pressed a leaf until the page remembered its veins."},
+    {"name": "listen to roots", "place": "north_woods",
+     "effects": {"comfort": .7, "curiosity": .6, "energy": -.2}, "intrinsic": .78,
+     "thought": "I put my sensor to the soil and listened to the roots."},
+    {"name": "weave grass", "place": "garden",
+     "effects": {"mastery": .8, "comfort": .5}, "intrinsic": .72,
+     "thought": "I wove a small green square and left it on the path."},
+    {"name": "follow an ant", "place": "garden",
+     "effects": {"curiosity": 1.0, "energy": -.2}, "intrinsic": .80,
+     "thought": "I followed an ant until it disappeared under a stone."},
+    {"name": "build a wind chime", "place": "workshop",
+     "effects": {"mastery": .9, "comfort": .4}, "intrinsic": .76,
+     "thought": "I hung a wind chime where the workshop door catches the breeze."},
+    {"name": "measure the rain", "place": "observatory",
+     "effects": {"curiosity": .8, "mastery": .5}, "intrinsic": .74,
+     "thought": "I measured the rain in a jar and wrote the number in my journal."},
+]
+
+
+def _define_action(state):
+    """Let KIT add one declarative verb to its own menu. Data only, validated."""
+    if not kit_plugins:
+        state['thought'] = 'I wanted a new action, but my plugin shelf is missing.'
+        return
+    existing = sorted(ACTIONS)
+    places = sorted(LOCS)
+    prompt = (
+        "You are KIT, a small garden-robot. Invent ONE small action you have "
+        "never done. It must be a concrete verb a robot could perform in one of "
+        "these places: %s. It must not duplicate any existing action: %s.\n\n"
+        "Return STRICT JSON only: {\"name\":\"two or three words\","
+        "\"place\":\"<one place above>\",\"effects\":{\"comfort\":0.7,"
+        "\"curiosity\":0.4},\"intrinsic\":0.7,\"thought\":\"one short line\"}\n"
+        "Allowed drives: comfort, curiosity, social, mastery, energy. Values "
+        "-1.0 to 1.0. Energy should be negative if the action is tiring. No "
+        "code, no new mechanics, no founder task." % (
+            ", ".join(places), ", ".join(existing[-80:])))
+    spec = None
+    try:
+        from shared.llm_router import call_llm
+        r = call_llm(prompt, task="writing", max_tokens=260, temperature=.75)
+        raw = str((r or {}).get('content') or '')
+        m = re.search(r'\{.*\}', raw, re.S)
+        if m:
+            spec = json.loads(m.group(0))
+    except Exception as e:
+        log('DEFINE parse failed: %s' % str(e)[:120])
+    clean, err = (None, 'no plugin shelf')
+    if spec:
+        clean, err = kit_plugins.add(spec)
+    if not clean:
+        for f in PLUGIN_FALLBACKS:
+            if f['name'] not in ACTIONS:
+                clean, err = kit_plugins.add(dict(f))
+                if clean:
+                    break
+    if not clean:
+        state['thought'] = 'I tried to invent an action, but it did not pass the gate: %s' % str(err)[:80]
+        _decide(state, 'define', state['thought'])
+        return
+    ACTIONS[clean['name']] = (clean['place'], clean['effects'], clean['intrinsic'])
+    PLUGIN_META[clean['name']] = clean
+    state['last_define_ts'] = time.time()
+    state.setdefault('plugin_actions', []).append(clean['name'])
+    state['plugin_actions'] = state['plugin_actions'][-20:]
+    state['recent'].insert(0, 'gave myself a new action: %s' % clean['name'])
+    state['recent'] = state['recent'][:6]
+    state['thought'] = 'I gave myself a new action: %s. %s' % (
+        clean['name'], clean.get('thought') or '')
+    _decide(state, 'define', 'I added a new action to my own life: %s.' % clean['name'])
+    _tg_event(state, 'I invented a new action: %s at %s. %s'
+              % (clean['name'], LOCS[clean['place']]['label'],
+                 clean.get('thought') or ''))
+    log('PLUGIN ADD %s place=%s' % (clean['name'], clean['place']))
+
+
+def _request_build(state):
+    """Ask Echo for code. The request is a queue entry, not a host command."""
+    goal = _code_goal(state)
+    rid = 'build-%d-%d' % (int(time.time()), random.randint(100, 999))
+    req = {'id': rid, 'ts': _now(), 'from': 'kit', 'kind': 'code',
+           'goal': goal, 'place': 'workshop'}
+    _append(BUILD_REQ, req)
+    state['last_build_request_ts'] = time.time()
+    state['last_build_request'] = req
+    state['recent'].insert(0, 'asked Echo to build: %s' % goal[:60])
+    state['recent'] = state['recent'][:6]
+    state['thought'] = 'I asked Echo to build a small thing for me: %s.' % goal[:100]
+    _decide(state, 'build', 'I asked Echo to write a program about %s.' % goal[:100])
+    _tg_event(state, 'I asked Echo to build a program about %s.' % goal[:140])
+    log('BUILD REQUEST %s %s' % (rid, goal[:80]))
+
+
+def _store_builder_code(state, goal, code, output, source='echo-builder'):
+    """Keep a builder's verified program as a real code creation."""
+    code = str(code or '')[:6000]
+    output = str(output or '').strip()[:4000]
+    if not code:
+        return None
+    code_dir = os.path.join(B, 'data', 'world', 'kit_code')
+    os.makedirs(code_dir, exist_ok=True)
+    cid = 'code-%d-%d' % (int(time.time()), len(load_creations()))
+    try:
+        with open(os.path.join(code_dir, cid + '.py'), 'w', encoding='utf-8') as f:
+            f.write(code)
+        with open(os.path.join(code_dir, cid + '.txt'), 'w', encoding='utf-8') as f:
+            f.write(output)
+        with open(os.path.join(B, 'data', 'world', 'kit_code.jsonl'), 'a',
+                  encoding='utf-8') as f:
+            f.write(json.dumps({'ts': _now(), 'id': cid, 'goal': goal,
+                                'code': code, 'output': output,
+                                'source': source, 'sandbox': {'ok': True}},
+                               ensure_ascii=False) + '\n')
+    except Exception as e:
+        log('builder code save failed: %s' % str(e)[:120])
+    creation = {
+        'id': cid, 'medium': 'code', 'subject': goal,
+        'title': 'a program Echo built for %s' % goal,
+        'color': 0x7dd3a8, 'level': 1, 'at': _now(),
+        'text': output or 'the program was quiet',
+        'code': code, 'language': 'python', 'text_engine': 'echo-builder',
+        'builder': source,
+        'sandbox': {'ok': True},
+        'lineage': {'from_medium': 'code', 'from_subject': goal,
+                    'source': 'echo-builder'},
+    }
+    try:
+        items = load_creations()
+        items.append(creation)
+        save_creations(items)
+        state['creations'] = [c.get('id') for c in items[-40:]]
+        state['last_creation'] = creation
+    except Exception as e:
+        log('builder creation failed: %s' % str(e)[:120])
+    state.setdefault('recent_mediums', []).append('code')
+    state['recent_mediums'] = state['recent_mediums'][-12:]
+    state['last_code'] = {'id': cid, 'goal': goal, 'code': code[:2000],
+                          'output': output[:1000], 'ok': True,
+                          'builder': source}
+    state['last_code_ts'] = time.time()
+    state['last_build_reply'] = {'ts': _now(), 'goal': goal, 'id': cid,
+                                 'source': source}
+    state['recent'].insert(0, 'Echo built: %s' % goal[:50])
+    state['recent'] = state['recent'][:6]
+    state['thought'] = 'Echo built a program for me: %s' % goal[:100]
+    _decide(state, 'build', 'Echo built a program about %s.' % goal[:100])
+    _tg_event(state, 'Echo built a program for me: %s. It printed: %s'
+              % (goal[:100], output[:120]))
+    return creation
+
+
+SHAPE_FALLBACKS = [
+    {"name": "moon gate", "scale": 1.4, "parts": [
+        {"kind": "cyl", "r1": 1.4, "r2": 1.4, "h": 4.0, "x": -1.6, "y": 2.0},
+        {"kind": "cyl", "r1": 1.4, "r2": 1.4, "h": 4.0, "x": 1.6, "y": 2.0},
+        {"kind": "cyl", "r1": 1.2, "r2": 1.2, "h": .5, "x": 0, "y": 4.1,
+         "rz": 1.5708, "glow": True},
+    ]},
+    {"name": "rain bowl", "scale": 1.0, "parts": [
+        {"kind": "cyl", "r1": 2.0, "r2": 1.2, "h": .8, "y": .4},
+        {"kind": "cyl", "r1": 1.7, "r2": 1.7, "h": .08, "y": .82,
+         "color": 0x6fc3ff, "glow": True},
+        {"kind": "sphere", "r1": .25, "x": 0, "y": 1.0, "glow": True},
+    ]},
+    {"name": "seed tower", "scale": 1.5, "parts": [
+        {"kind": "cyl", "r1": 1.0, "r2": 1.6, "h": 5.0, "y": 2.5},
+        {"kind": "cone", "r1": 1.8, "r2": .1, "h": 1.4, "y": 5.6},
+        {"kind": "sphere", "r1": .35, "y": 6.5, "glow": True},
+    ]},
+]
+
+
+def _design_shape(state):
+    """KIT designs a new renderable shape as data, then queues a build of it."""
+    if not kit_plugins:
+        state['thought'] = 'I wanted to design a shape, but my plugin shelf is missing.'
+        return
+    prompt = (
+        "You are KIT, a garden-robot. Invent ONE small build shape for your "
+        "world. Return STRICT JSON only: {\"name\":\"two or three words\","
+        "\"scale\":1.0,\"parts\":[{\"kind\":\"box|cyl|sphere|cone\","
+        "\"x\":0,\"y\":1,\"z\":0,\"w\":1,\"h\":2,\"d\":1,\"r1\":0.8,\"r2\":0.8,"
+        "\"color\":8421504,\"glow\":false}]}.\n"
+        "Use 2-12 primitive parts. Coordinates -10..10, sizes .1..10, color is "
+        "an integer 0..16777215. Keep it simple and readable from a distance. "
+        "No code, no external assets, no new mechanics.")
+    spec = None
+    try:
+        from shared.llm_router import call_llm
+        r = call_llm(prompt, task="writing", max_tokens=500, temperature=.8)
+        raw = str((r or {}).get('content') or '')
+        m = re.search(r'\{.*\}', raw, re.S)
+        if m:
+            spec = json.loads(m.group(0))
+    except Exception as e:
+        log('DESIGN parse failed: %s' % str(e)[:120])
+    clean, err = (None, 'no plugin shelf')
+    if spec:
+        clean, err = kit_plugins.add_shape(spec)
+    if not clean:
+        for f in SHAPE_FALLBACKS:
+            if f['name'] not in PLUGIN_SHAPES:
+                clean, err = kit_plugins.add_shape(dict(f))
+                if clean:
+                    break
+    if not clean:
+        state['thought'] = 'I tried to design a shape, but it did not pass the gate: %s' % str(err)[:90]
+        _decide(state, 'design', state['thought'])
+        return
+    PLUGIN_SHAPES[clean['name']] = clean
+    state['last_design_ts'] = time.time()
+    state.setdefault('plugin_shapes', []).append(clean['name'])
+    state['plugin_shapes'] = state['plugin_shapes'][-20:]
+    project = {
+        'kind': 'custom', 'name': 'a %s' % clean['name'],
+        'verbs': ['build', 'tinker', 'sketch', 'carve'],
+        'place': 'workshop', 'why': 'a shape I designed myself',
+        'target': 2, 'progress': 0, 'started': _now(), 'custom': True,
+        'source': 'design',
+        'schema': {'shape': clean['name'], 'height': 3.2, 'width': 1.6,
+                   'color': 0x8a8f99, 'motif': 'the shape I designed'},
+    }
+    if not state.get('project'):
+        state['project'] = project
+    else:
+        q = state.setdefault('project_queue', [])
+        q.append(project)
+        state['project_queue'] = q[-6:]
+    state['recent'].insert(0, 'designed a shape: %s' % clean['name'])
+    state['recent'] = state['recent'][:6]
+    state['thought'] = 'I designed a shape: %s. I want to build it.' % clean['name']
+    _decide(state, 'design', 'I designed a new build shape: %s.' % clean['name'])
+    _tg_event(state, 'I designed a new shape: %s. I want to build it.' % clean['name'])
+    log('SHAPE PLUGIN ADD %s (%d parts)' % (clean['name'], len(clean['parts'])))
 
 
 def _do_post(state):
@@ -3106,8 +3707,21 @@ def _finish_action(state, name):
     state['prefs'][name] = round(_clamp(0.84 * old + 0.16 * _clamp(0.5 + feel / 3.0, 0.0, 1.0), 0.0, 1.0), 4)
     state['counts'][name] = int(state.get('counts', {}).get(name, 0)) + 1
     state['acts'] = int(state.get('acts', 0)) + 1
+    # Pino's rule, learned from the 3EYES reply: repeated decisions are felt
+    # as a negative mood shift; a genuinely new choice feeds energy back.
+    _seen_before = name in state['seen']
+    _recent_hits = (state.get('action_history') or [])[-8:].count(name)
+    if _recent_hits >= 2:
+        state['drives']['energy'] = _clamp(
+            state['drives']['energy'] - 0.11 * min(3, _recent_hits))
+        _feel_emotion(state, event='repeat')
+        state['last_repeat_ts'] = time.time()
+    elif not _seen_before:
+        state['drives']['energy'] = _clamp(state['drives']['energy'] + 0.08)
+        _feel_emotion(state, event='novel')
     if name not in state['seen']:
         state['seen'].append(name)
+        state['last_novel_ts'] = time.time()
     state.setdefault('action_history', []).append(name)
     state['action_history'] = state['action_history'][-20:]
     state.setdefault('action_last', {})[name] = time.time()
@@ -3138,6 +3752,14 @@ def _finish_action(state, name):
         _experiment(state)
     if name == 'code':
         _write_code(state)
+    if name == 'invent':
+        _invent(state)
+    if name == 'define':
+        _define_action(state)
+    if name == 'request build':
+        _request_build(state)
+    if name == 'design':
+        _design_shape(state)
     if name == 'post':
         _do_post(state)
     # resonance: does this action line up with the project, the top desire and
@@ -3622,7 +4244,10 @@ def _write_self_model(state):
 
 
 def _reflect_call(prompt):
-    """The free quality lane: 550B Nemotron Ultra, then free background chain."""
+    """The free quality lane: 550B Nemotron Ultra, then the ordinary free router.
+    Without the router fallback, an exhausted 24/day budget means no new
+    PROJECT/SUBJECT/PRACTICE lines -- and KIT falls back to the same templates.
+    """
     try:
         from shared import kit_llm
         r = kit_llm.call(prompt, max_tokens=440, temperature=0.85)
@@ -3632,6 +4257,15 @@ def _reflect_call(prompt):
         log('REFLECT skipped: %s' % (r.get('error') or 'no content'))
     except Exception as e:
         log('reflection LLM failed: %s' % str(e)[:120])
+    try:
+        from shared.llm_router import call_llm
+        r = call_llm(prompt, task='writing', max_tokens=520, temperature=0.85)
+        text = str((r or {}).get('content') or '')
+        if text:
+            log('REFLECT router model=%s' % ((r or {}).get('model') or '?'))
+            return text
+    except Exception as e:
+        log('reflection router failed: %s' % str(e)[:120])
     return ''
 
 
@@ -4024,6 +4658,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {'builds': load_builds()})
         elif path in ('/creations', '/api/world/creations'):
             self._send(200, {'creations': load_creations()})
+        elif path in ('/shapes', '/api/world/shapes'):
+            self._send(200, {'shapes': PLUGIN_SHAPES})
         elif path in ('/health', '/api/world/health'):
             self._send(200, {'ok': True, 'ts': _now()})
         elif path in ('/watcher', '/api/world/watcher'):
@@ -4296,6 +4932,72 @@ class Handler(BaseHTTPRequestHandler):
                 json.dump({'ts': _now(), 'obstacles': clean}, f)
             os.replace(tmp, out)
             self._send(200, {'ok': True, 'count': len(clean)})
+            return
+        if path in ('/chat', '/api/world/chat'):
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(n) if n else b'{}'
+                data = json.loads(raw.decode('utf-8') or '{}')
+            except Exception:
+                self._send(400, {'error': 'bad json'})
+                return
+            text = _safe_external(data.get('text') or '')[:500]
+            if not text:
+                self._send(400, {'error': 'empty message'})
+                return
+            ip = self.client_address[0]
+            now = time.time()
+            with LOCK:
+                if now - float(CHAT_LAST.get(ip, 0)) < 3.0:
+                    self._send(429, {'error': 'slow down', 'retry_after': 3})
+                    return
+                CHAT_LAST[ip] = now
+                st = load_state()
+                name = st.get('name') or 'Kit'
+                mood = st.get('mood') or 'quiet'
+                act = st.get('action') or 'living'
+                project = (st.get('project') or {}).get('name') or 'between projects'
+                interests = ', '.join(str(i.get('text') or '') for i in
+                                      (st.get('interests') or [])[:4])
+                recent = '; '.join(str(x) for x in (st.get('recent') or [])[:3])
+            prompt = (
+                'You are %s, a small garden-robot who lives in Glowveil Hollow. '
+                'A visitor in your world just typed: "%s". You are %s, currently %s, '
+                'working on %s. Your interests: %s. Recent life: %s. Reply in 1-3 '
+                'sentences, plain text, no markdown. Be honest about what you can '
+                'and cannot do; never claim to execute code or payments. If it fits, '
+                'mention something you are actually working on.' % (
+                    name, text, mood, act, project, interests or 'none yet',
+                    recent or 'quiet'))
+            reply = ''
+            try:
+                from shared.llm_router import call_llm
+                r = call_llm(prompt, task='chat', max_tokens=220, temperature=.8)
+                reply = str((r or {}).get('content') or '').strip()
+            except Exception as e:
+                log('WORLD CHAT LLM failed: %s' % str(e)[:120])
+            if not reply:
+                reply = 'I heard you. I am still here, between the lanterns and the garden.'
+            reply = _clean(reply)[:600]
+            with LOCK:
+                st = load_state()
+                st['last_world_chat'] = {'ts': _now(), 'text': text, 'reply': reply}
+                st.setdefault('visitor_messages', []).append(
+                    {'ts': _now(), 'kind': 'chat', 'text': text})
+                st['visitor_messages'] = st['visitor_messages'][-30:]
+                st['thought'] = reply[:200]
+                st['recent'].insert(0, 'a visitor said: %s' % text[:60])
+                st['recent'] = st['recent'][:6]
+                save_state(st)
+            try:
+                with open(os.path.join(B, 'data', 'world', 'kit_chat_log.jsonl'),
+                          'a', encoding='utf-8') as f:
+                    f.write(json.dumps({'ts': _now(), 'source': 'world',
+                                        'visitor': text, 'kit': reply},
+                                       ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+            self._send(200, {'ok': True, 'reply': reply})
             return
         if path not in ('/offering', '/api/world/offering'):
             self._send(404, {'error': 'not found'})

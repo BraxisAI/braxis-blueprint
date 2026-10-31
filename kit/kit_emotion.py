@@ -65,6 +65,11 @@ EVENT_FEEL = {
     'project_done': ['pride', 'determination', 'acceptance'],
     'blocked': ['sadness', 'remorse', 'determination'],
     'night': ['introspection', 'melancholy', 'calm'],
+    'novel': ['surprise', 'curiosity', 'joy', 'anticipation'],
+}
+
+EVENT_DOWN = {
+    'repeat': ['joy', 'playfulness', 'anticipation', 'curiosity'],
 }
 
 INTERLOCKS = [
@@ -107,6 +112,8 @@ def update_emotions(state, action='', event='', amount=1.0):
         _pulse(emotions, [name], 0.09 * amount)
     for name in EVENT_FEEL.get(str(event), []):
         _pulse(emotions, [name], 0.16 * amount)
+    for name in EVENT_DOWN.get(str(event), []):
+        _pulse(emotions, [name], -0.14 * amount)
     for a, b, strength in INTERLOCKS:
         if emotions[a] > 0.5:
             emotions[b] = _clamp(emotions[b] - (emotions[a] - 0.5) * strength)

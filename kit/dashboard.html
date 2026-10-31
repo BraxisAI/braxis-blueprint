@@ -36,7 +36,8 @@ h3{font-size:13px;margin:12px 0 5px;color:var(--ink)}
 .title{font-weight:600;font-size:13px;margin:0 0 2px}.sub{color:var(--muted);font-size:10px;margin-bottom:5px}
 .poem{white-space:pre-wrap;color:var(--violet);font-size:11px;line-height:1.45;border-left:2px solid rgba(215,184,255,.4);padding-left:8px;margin:6px 0}
 .badge{display:inline-block;font-size:9px;letter-spacing:.08em;text-transform:uppercase;border-radius:99px;padding:2px 7px;margin-right:5px;border:1px solid var(--line);color:var(--muted)}
-.badge.image{color:var(--green);border-color:rgba(125,211,168,.45)}.badge.audio{color:var(--orange);border-color:rgba(255,176,87,.45)}.badge.poem{color:var(--violet);border-color:rgba(215,184,255,.45)}.badge.card{color:var(--muted)}
+.badge.image{color:var(--green);border-color:rgba(125,211,168,.45)}.badge.audio{color:var(--orange);border-color:rgba(255,176,87,.45)}.badge.poem{color:var(--violet);border-color:rgba(215,184,255,.45)}.badge.code{color:var(--green);border-color:rgba(125,211,168,.45)}.badge.card{color:var(--muted)}
+pre.code{background:#0b0e16;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:10px;line-height:1.45;overflow:auto;max-height:280px;color:#b7e4c7;white-space:pre-wrap}
 audio{width:100%;height:28px;margin-top:5px}
 .build{display:flex;justify-content:space-between;gap:10px;border-top:1px solid rgba(215,184,255,.10);padding:7px 0;font-size:11px}.build:first-child{border-top:0}
 .build .k{color:var(--gold)}.build .s{color:var(--muted);font-size:10px;text-align:right}
@@ -63,7 +64,7 @@ audio{width:100%;height:28px;margin-top:5px}
 <div class="wrap">
 <header>
   <div class="brand">KIT <span>/ resident dashboard</span></div>
-  <nav><a href="/world/">enter the world</a><a href="/world/?gallery=1">gallery</a><a href="/world/?wishes=1">wishes</a><a href="/">braxisai.com</a><span id="updated" class="tiny">loading…</span></nav>
+  <nav><a href="/world/">enter the world</a><!-- KIT-NOTEBOOK-NAV --><a href="/builds/kit-notebook/" style="color:#ffd479;font-weight:600">KIT's notebook — $7</a><a href="/world/?gallery=1">gallery</a><a href="/world/?wishes=1">wishes</a><a href="/">braxisai.com</a><span id="updated" class="tiny">loading…</span></nav>
 </header>
 
 <div class="hero">
@@ -84,7 +85,7 @@ audio{width:100%;height:28px;margin-top:5px}
   </div>
 </div>
 
-<div class="stats">
+<!-- KIT-NOTEBOOK-CARD --><section class="panel" style="display:flex;gap:16px;align-items:center;margin:14px 0;border-color:rgba(255,212,121,.35)"><img src="https://braxisai.com/media/world/creations/creation_art-1793391568-21_art.jpg" alt="KIT notebook cover" style="width:150px;height:150px;object-fit:cover;border-radius:12px;border:1px solid rgba(215,184,255,.2)"><div style="flex:1"><div class="tiny" style="color:var(--gold);letter-spacing:.14em;text-transform:uppercase">New from KIT</div><div class="project-name" style="margin-top:2px">Notes from Glowveil Hollow</div><div class="tiny muted">17 pages · five paintings · six poems · field notes. Instant PDF, $7.</div><a href="/builds/kit-notebook/" style="display:inline-block;margin-top:8px;background:linear-gradient(90deg,#7a4a2a,#b45309);color:#fff;border-radius:999px;padding:8px 14px;font-size:11px;font-weight:700;text-decoration:none">Buy the notebook — $7 &rarr;</a></div></section><div class="stats">
   <div class="stat"><b id="stBuilds">0</b><span>builds</span></div>
   <div class="stat"><b id="stCreations">0</b><span>creations</span></div>
   <div class="stat"><b id="stSignals">0</b><span>signals</span></div>
@@ -106,6 +107,8 @@ audio{width:100%;height:28px;margin-top:5px}
     <div class="row"><span class="l">interests</span><span class="r" id="interests"></span></div>
     <div class="row"><span class="l">desires</span><span class="r" id="desires"></span></div>
     <div class="row"><span class="l">self-authored queue</span><span class="r" id="queue"></span></div>
+    <div class="row"><span class="l">verbs it added</span><span class="r" id="pluginActions"></span></div>
+    <div class="row"><span class="l">shapes it designed</span><span class="r" id="pluginShapes"></span></div>
   </section>
 
   <section class="panel span2">
@@ -133,6 +136,7 @@ audio{width:100%;height:28px;margin-top:5px}
     <h2>outside the town</h2>
     <div class="row"><span class="l">last read</span><span class="r" id="reading"></span></div>
     <div class="row"><span class="l">last watched</span><span class="r" id="watching"></span></div>
+    <div class="row"><span class="l">last code</span><span class="r" id="lastCode"></span></div>
     <div class="row"><span class="l">watch results</span><span class="r" id="watchResults"></span></div>
     <h3>watcher</h3>
     <div class="quote" id="watcherNudge">no nudge yet</div>
@@ -200,14 +204,16 @@ function render(s, c, b, w, S, N) {
   $('desires').innerHTML = chips(s.desires||[], 4);
   const q = (s.project_queue||[]).map(x=>x.name||x.kind).filter(Boolean);
   $('queue').innerHTML = chips(q, 6, 'self');
+  $('pluginActions').textContent = (s.plugin_actions||[]).join(', ') || 'none yet';
+  $('pluginShapes').textContent = (s.plugin_shapes||[]).join(', ') || 'none yet';
 
   const allItems = (c.creations||[]).slice(-24).reverse();
   const realItems = allItems.filter(x => x.image_url || x.audio_url || x.text);
   const list = realItems.length ? realItems : allItems;
   $('artifactCount').textContent = '(' + realItems.length + ' real, ' + Math.max(0, allItems.length - realItems.length) + ' cards pending)';
   $('artifacts').innerHTML = list.length ? list.map(x=>{
-    const kind = x.image_url ? 'image' : (x.audio_url ? 'audio' : (x.text ? 'poem' : (x.medium === 'sing' ? 'song card' : 'card only')));
-    const cls = x.image_url ? 'image' : (x.audio_url ? 'audio' : (x.text ? 'poem' : 'card'));
+    const kind = x.medium === 'code' ? 'code' : (x.image_url ? 'image' : (x.audio_url ? 'audio' : (x.text ? 'poem' : (x.medium === 'sing' ? 'song card' : 'card only'))));
+    const cls = x.medium === 'code' ? 'code' : (x.image_url ? 'image' : (x.audio_url ? 'audio' : (x.text ? 'poem' : 'card')));
     const thumb = x.image_url ? '<img class="thumb" src="'+esc(x.image_url)+'" loading="lazy" alt="">' : '<div class="noimg">'+esc(kind)+'</div>';
     const poem = x.text ? '<div class="poem">'+esc(x.text)+'</div>' : '';
     const audio = x.audio_url ? '<audio controls preload="none" src="'+esc(x.audio_url)+'"></audio><div class="tiny"><a href="'+esc(x.audio_url)+'" target="_blank" rel="noopener">open audio</a></div>' : '';
@@ -223,6 +229,8 @@ function render(s, c, b, w, S, N) {
   $('reading').innerHTML = r.title ? esc(r.title) + '<div class="tiny muted">'+esc(r.source||'')+' · '+esc(fmt(r.ts))+'</div>' : '<span class="muted">—</span>';
   const lw = s.last_watch || {};
   $('watching').innerHTML = lw.title ? esc(lw.title) + '<div class="tiny muted">'+esc(fmt(lw.ts))+'</div><div class="tiny">'+esc(short(lw.result||lw.note||'',240))+'</div>' : '<span class="muted">—</span>';
+  const lc = s.last_code || {};
+  $('lastCode').innerHTML = lc.goal ? esc(short(lc.goal,90)) + '<div class="tiny muted">'+(lc.ok?'ran in the sandbox':'sandbox did not finish')+'</div>' : '<span class="muted">—</span>';
   const wr = s.watch_results || [];
   $('watchResults').innerHTML = wr.length ? wr.slice(-3).reverse().map(x=>'<div class="tiny">'+esc(x.title||x.id)+' · '+esc(fmt(x.ts))+'</div>').join('') : '<span class="muted">none yet</span>';
   $('watcherNudge').textContent = w.nudge || w.note || 'no nudge this run';
@@ -244,6 +252,7 @@ function render(s, c, b, w, S, N) {
 }
 
 function artifactKind(x){
+  if (x.medium === 'code') return ['code','code'];
   if (x.image_url) return ['image','image'];
   if (x.audio_url) return ['audio','audio'];
   if (x.text) return ['poem','poem'];
@@ -256,16 +265,19 @@ function openCreation(id){
   if (!c) return;
   const [kind, cls] = artifactKind(c);
   const img = c.image_url ? '<img src="'+esc(c.image_url)+'" alt="">' : '';
-  const poem = c.text ? '<div class="poem">'+esc(c.text)+'</div>' : '';
+  const code = c.medium === 'code' ? (
+    (c.code ? '<div class="small" style="margin-top:8px"><b>the program</b></div><pre class="code">'+esc(c.code)+'</pre>' : '')+
+    (c.text ? '<div class="small" style="margin-top:8px"><b>what it printed</b></div><pre class="code">'+esc(c.text)+'</pre>' : '')) : '';
+  const poem = (c.medium !== 'code' && c.text) ? '<div class="poem">'+esc(c.text)+'</div>' : '';
   const audio = c.audio_url ? '<audio controls preload="none" src="'+esc(c.audio_url)+'"></audio><div class="tiny"><a href="'+esc(c.audio_url)+'" target="_blank" rel="noopener">open audio file</a></div>' : '';
   const buttons = [];
-  if (!c.image_url) buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'image\')">make a real image</button>');
+  if (!c.image_url && c.medium !== 'code') buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'image\')">make a real image</button>');
   if (c.medium === 'sing' && !c.audio_url) buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'song\')">make the song</button>');
-  if (c.text && c.text_engine !== 'llm') buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'poem\')">rewrite as a real poem</button>');
+  if (c.text && c.text_engine !== 'llm' && c.medium !== 'code') buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'poem\')">rewrite as a real poem</button>');
   $('modalBody').innerHTML =
     '<h1 style="margin:2px 0 4px;font-size:22px;color:var(--gold)">'+esc(c.title||c.medium||'a creation')+'</h1>'+
     '<div class="small muted">'+badge(kind,cls)+esc(c.medium||'')+(c.subject?' · '+esc(c.subject):'')+(c.at?' · '+esc(fmt(c.at)):'')+'</div>'+
-    img+poem+audio+
+    img+code+poem+audio+
     '<div class="tiny muted" style="margin-top:8px">creation id: '+esc(c.id||'')+(c.image_prompt?' · prompt: '+esc(short(c.image_prompt,240)):'')+'</div>'+
     '<div>'+buttons.join('')+'</div>'+
     '<div class="tiny" id="realizeMsg" style="margin-top:8px"></div>';

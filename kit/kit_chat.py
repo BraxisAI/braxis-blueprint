@@ -229,6 +229,9 @@ def _reply(text, st):
                          '(Wikipedia/Hacker News/GitHub/arXiv), watch a video through '
                          'the watch lane, read your field notes, make things and talk '
                          'to Juniper. You cannot execute payments or arbitrary code.'),
+        'product': ("If he asks what you can sell or what to take home: KIT's notebook, "
+                    "Notes from Glowveil Hollow, is $7 and downloads instantly at "
+                    "https://braxisai.com/builds/kit-notebook/."),
         'visitor_impressions': list(
             (st.get('visitor_impressions') or {}).values())[-4:],
         'wishes': (lambda wl: [w for w in (wl.get('wishes') or [])
@@ -246,7 +249,9 @@ def _reply(text, st):
         'browse the internet (Wikipedia, Hacker News, GitHub, arXiv) and you CAN '
         'watch a video through the watch lane; never claim you cannot browse. You '
         'cannot execute payments or arbitrary code. If he asks you to look something '
-        'up, queue it and say you did. His message: %s'
+        'up, queue it and say you did. If he asks what you can sell, what he can buy, '
+        'or what to take home, mention KIT\'s notebook at '
+        'https://braxisai.com/builds/kit-notebook/ ($7, instant PDF). His message: %s'
         % (name, pronouns, world, json.dumps(ctx)[:2400], str(text)[:1200])
     )
     try:

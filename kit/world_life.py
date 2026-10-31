@@ -405,6 +405,10 @@ def _default_state():
         'wonders': [],
         'custom_projects': [],
         'project_queue': [],
+        'practice': None,
+        'practice_queue': [],
+        'practice_history': [],
+        'visitor_actions': 0,
         'recent_project_kinds': [],
         'blank_slate': False,
         'thought_history': [],
@@ -840,6 +844,11 @@ def _thought(state, action=None, place=None):
 
 
 def choose(state):
+    p = state.get('practice') or {}
+    steps = p.get('steps') or []
+    idx = int(p.get('index') or 0)
+    if steps and idx < len(steps):
+        return steps[idx]
     d = state['drives']
     prefs = state['prefs']
     seen = set(state.get('seen') or [])
@@ -2813,6 +2822,51 @@ def _do_post(state):
     log('POST %s -> %s' % (title[:80], ','.join(rows)))
 
 
+def _start_practice(state):
+    """A ritual is a short sequence of normal actions that KIT wrote itself."""
+    if state.get('practice'):
+        return
+    q = [p for p in (state.get('practice_queue') or []) if p.get('steps')]
+    if not q:
+        return
+    p = q.pop(0)
+    p['index'] = 0
+    p['started'] = _now()
+    state['practice'] = p
+    state['practice_queue'] = q
+    state['thought'] = 'I am starting a small ritual: %s.' % p.get('name', 'a practice')
+    state['recent'].insert(0, 'ritual: %s' % p.get('name', 'a practice'))
+    state['recent'] = state['recent'][:6]
+    _decide(state, 'practice', 'I am doing a ritual: %s.' % p.get('name', 'a practice'))
+    log('PRACTICE start %s (%s)' % (p.get('name'), ','.join(p.get('steps') or [])))
+
+
+def _advance_practice(state, name):
+    p = state.get('practice')
+    if not p:
+        return
+    steps = p.get('steps') or []
+    idx = int(p.get('index') or 0)
+    if idx >= len(steps) or name != steps[idx]:
+        return
+    p['index'] = idx + 1
+    if p['index'] >= len(steps):
+        done = {'name': p.get('name'), 'steps': steps,
+                'started': p.get('started'), 'done': _now()}
+        hist = state.setdefault('practice_history', [])
+        hist.append(done)
+        state['practice_history'] = hist[-20:]
+        state['practice'] = None
+        state['thought'] = 'The ritual is done. %s has a shape now.' % p.get('name', 'It')
+        state['recent'].insert(0, 'finished ritual: %s' % p.get('name', 'a practice'))
+        state['recent'] = state['recent'][:6]
+        _decide(state, 'practice', 'I finished the ritual: %s.' % p.get('name', 'a practice'))
+        log('PRACTICE done %s' % p.get('name'))
+    else:
+        state['practice'] = p
+        state['thought'] = 'The ritual continues. Next: %s.' % steps[p['index']]
+
+
 def _finish_action(state, name):
     _default_place, eff, intrinsic = ACTIONS[name]
     place = state.get('_act_place') or _default_place
@@ -2893,6 +2947,7 @@ def _finish_action(state, name):
     state['recent'].insert(0, '%s at %s' % (name, LOCS[place]['label']))
     state['recent'] = state['recent'][:6]
     _self_observe(state)
+    _advance_practice(state, name)
     _advance_project(state, name)
 
 
@@ -2984,7 +3039,7 @@ def _apply_offers(state):
         if kind == 'idea':
             text = text or random.choice(IDEAS)[:200]
             state['ideas'] = int(state.get('ideas', 0)) + 1
-            state['visitors'] = int(state.get('visitors', 0)) + 1
+            state['visitor_actions'] = int(state.get('visitor_actions', 0)) + 1
             state['offerings'] = int(state.get('offerings', 0)) + 1
             # A visitor's idea is a queued offering, not a command. KIT decides
             # at its next project boundary whether to make it.
@@ -3009,7 +3064,7 @@ def _apply_offers(state):
             continue
         for k, v in eff.items():
             state['drives'][k] = _clamp(state['drives'][k] + v)
-        state['visitors'] = int(state.get('visitors', 0)) + 1
+        state['visitor_actions'] = int(state.get('visitor_actions', 0)) + 1
         state['offerings'] = int(state.get('offerings', 0)) + 1
         state['recent'].insert(0, 'a visitor left a %s%s' % (
             kind, ' with a note' if text else ''))
@@ -3032,6 +3087,8 @@ def _apply_offers(state):
         _append(EXTERNAL_LOG, {'ts': _now(), 'source': 'visitor',
                                'kind': kind, 'text': text, 'ip_hash': fid})
         log('OFFER %s %s' % (kind, text[:80]))
+    if items:
+        state['visitors'] = len(state.get('visitor_impressions') or {})
 
 
 def _clean(text):
@@ -3286,6 +3343,8 @@ def _write_self_model(state):
             'gender': state.get('gender'), 'world': state.get('world_name'),
             'mood': state.get('mood'),
             'companion': state.get('companion'),
+            'practice': state.get('practice'),
+            'practices_done': [p.get('name') for p in (state.get('practice_history') or [])[-5:]],
             'autonomy': {
                 'origins': state.get('project_origin_counts') or {},
                 'self_observation': state.get('self_observation') or '',
@@ -3337,7 +3396,7 @@ def _reflect_call(prompt):
     """The free quality lane: 550B Nemotron Ultra, then free background chain."""
     try:
         from shared import kit_llm
-        r = kit_llm.call(prompt, max_tokens=380, temperature=0.85)
+        r = kit_llm.call(prompt, max_tokens=440, temperature=0.85)
         if r.get('ok'):
             log('REFLECT model=%s remaining=%s' % (r.get('model'), r.get('remaining')))
             return r.get('content') or ''
@@ -3409,6 +3468,7 @@ def _reflect(state):
         'SELF: one honest sentence about a habit you notice in yourself. No praise.\n'
         'IDEAS: three things you want to make next, each a name and one sentence, separated by |. At most one poem.\n'
         'CURIOSITY: one thing you want to look up outside the town, 2-6 words.\n'
+        'PRACTICE: one small ritual you want to perform, as "name -- step1, step2, step3" using ordinary actions; 2-4 steps, required.\n'
         'PROJECT: something you want to make that is not on any list -- a name and one sentence. Leave blank if your current project is enough.\n'
         'NAME: the name you want to be called -- keep it or choose your own.\n'
         'PRONOUNS: he/him, she/her, they/them, it/its, or none -- yours.\n'
@@ -3428,7 +3488,7 @@ def _reflect(state):
     reflection, desire, dream = '', '', ''
     wonder, subject = '', ''
     project_idea = ''
-    self_line, ideas_raw, curiosity = '', '', ''
+    self_line, ideas_raw, curiosity, practice_raw = '', '', '', ''
     name_raw, pronouns_raw, gender_raw = '', '', ''
     world, tag = '', ''
     old_world = state.get('world_name')
@@ -3450,6 +3510,8 @@ def _reflect(state):
             ideas_raw = re.sub(r'^IDEAS\s*:\s*', '', l, flags=re.I)
         elif re.match(r'^CURIOSITY\s*:', l, re.I):
             curiosity = re.sub(r'^CURIOSITY\s*:\s*', '', l, flags=re.I)
+        elif re.match(r'^PRACTICE\s*:', l, re.I):
+            practice_raw = re.sub(r'^PRACTICE\s*:\s*', '', l, flags=re.I)
         elif re.match(r'^PROJECT\s*:', l, re.I):
             project_idea = re.sub(r'^PROJECT\s*:\s*', '', l, flags=re.I)
         elif re.match(r'^NAME\s*:', l, re.I):
@@ -3471,6 +3533,7 @@ def _reflect(state):
     self_line = _clean(self_line)[:220]
     ideas_raw = _clean(ideas_raw)[:600]
     curiosity = _clean(curiosity)[:80]
+    practice_raw = _clean(practice_raw)[:260]
     if self_line:
         state['self_observation'] = self_line
         state['self_observed_ts'] = now
@@ -3479,6 +3542,20 @@ def _reflect(state):
         _interest_add(state, curiosity, 'reflection', 0.40)
         state['browse_topic'] = curiosity
         _decide(state, 'curiosity', 'I want to look up %s.' % curiosity)
+    if practice_raw and '--' in practice_raw:
+        _name, _steps_raw = practice_raw.split('--', 1)
+        _name = _clean(_name)[:60] or 'a small ritual'
+        _steps = []
+        for _st in _steps_raw.replace(';', ',').split(','):
+            _st = _clean(_st)[:40]
+            if _st in ACTIONS and _st not in ('practice',):
+                _steps.append(_st)
+        if 2 <= len(_steps) <= 5:
+            state.setdefault('practice_queue', []).append(
+                {'name': _name, 'steps': _steps, 'why': 'I chose this shape for a day.'})
+            state['practice_queue'] = state['practice_queue'][-4:]
+            _decide(state, 'practice', 'I want to perform a ritual: %s (%s).'
+                    % (_name, ', '.join(_steps)))
     if ideas_raw:
         ideas = []
         for chunk in ideas_raw.split('|')[:3]:
@@ -3601,6 +3678,7 @@ def _apply_world_inputs(state):
 
 def tick(state):
     _apply_visits(state)
+    _start_practice(state)
     _apply_offers(state)
     _check_mail(state)
     _apply_world_inputs(state)

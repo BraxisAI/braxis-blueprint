@@ -107,6 +107,10 @@ still missing.
   video titles and real names.
 - **Build scale:** custom shapes are scaled by type (tower 3×, spire 2.6×,
   monument 2.5×), so towers and overlooks read against the city blocks.
+- **Rituals:** KIT can write a 2–5 step `PRACTICE` (name + ordinary actions).
+  The engine queues it, executes the steps, and records `practice_history`. A
+  live ritual, **Dawn Tending** (`water plants`, `smell flowers`, `watch
+  fountain`), is shown in the HUD/dashboard as `ritual: name · step 1 of 3`.
 - **Project steps:** `progress / target` is the number of matching actions,
   not a quality score. The HUD now says **step X of Y**; future projects use
   3–5 steps.

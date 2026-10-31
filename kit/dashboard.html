@@ -97,6 +97,7 @@ audio{width:100%;height:28px;margin-top:5px}
     <h2>autonomy</h2>
     <div class="row"><span class="l">companion</span><span class="r" id="companion"></span></div>
     <div class="row"><span class="l">last exchange</span><span class="r" id="companionDialog"></span></div>
+    <div class="row"><span class="l">ritual</span><span class="r" id="practice"></span></div>
     <div class="row"><span class="l">page visits</span><span class="r" id="visits"></span></div>
     <div class="row"><span class="l">project origins</span><span class="r" id="origins"></span></div>
     <div class="row"><span class="l">recent mediums</span><span class="r" id="mediums"></span></div>
@@ -172,6 +173,11 @@ function render(s, c, b, w, S) {
   $('companion').innerHTML = comp ? ('<span class="chip self">'+esc(comp.name||'friend')+' the '+esc(String(comp.kind||'companion').replace(/-/g,' '))+'</span> <span class="tiny muted">bond '+esc(comp.bond||0)+'</span>' + (comp.last_words ? '<div class="tiny">"'+esc(comp.last_words)+'"</div>' : '')) : '<span class="muted">none yet</span>';
   const lastTalk = (s.companion_dialog || []).slice(-1)[0];
   $('companionDialog').innerHTML = lastTalk ? ('<div class="tiny">Kit: "'+esc(lastTalk.kit)+'"</div><div class="tiny">'+esc(comp && comp.name || 'Juniper')+': "'+esc(lastTalk.juniper)+'"</div>') : '<span class="muted">no exchange yet</span>';
+  const pr = s.practice;
+  const done = (s.practice_history || []).slice(-1)[0];
+  $('practice').innerHTML = pr
+    ? ('<span class="chip self">'+esc(pr.name || 'a ritual')+'</span> <span class="tiny muted">step '+esc((pr.index||0)+1)+' of '+esc((pr.steps||[]).length)+'</span>')
+    : (done ? ('<span class="tiny muted">last: '+esc(done.name||'a ritual')+'</span>') : '<span class="muted">no ritual yet</span>');
   $('visits').innerHTML = esc(s.visits_total || 0) + ' page loads · ' + esc((s.visit_ids||[]).length) + ' browser sessions · ' + esc(Object.keys(s.visitor_impressions||{}).length) + ' known IP hashes';
   const origins = s.project_origin_counts || {};
   $('origins').innerHTML = Object.keys(origins).length ? Object.entries(origins).map(([k,v])=>'<span class="chip '+(k==='self'?'self':'')+'">'+esc(k)+' '+v+'</span>').join(' ') : '<span class="muted">—</span>';

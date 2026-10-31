@@ -133,6 +133,45 @@ def _describe_photo(file_id):
         return ''
 
 
+def _chat_history(limit=4):
+    try:
+        rows = open(os.path.join(B, 'data/world/kit_chat_log.jsonl'),
+                    encoding='utf-8').read().splitlines()[-limit:]
+    except Exception:
+        return []
+    out = []
+    for line in rows:
+        try:
+            x = json.loads(line)
+            out.append({'q': str(x.get('q') or '')[:240],
+                        'a': str(x.get('a') or '')[:240]})
+        except Exception:
+            pass
+    return out
+
+
+def _maybe_send_picture(chat, text, st):
+    if not re.search(r'(send|show|see|want).{0,30}(picture|image|painting|photo|art)',
+                     text or '', re.I):
+        return ''
+    try:
+        items = _load_json(os.path.join(B, 'data', 'world', 'world_creations.json'), [])
+    except Exception:
+        items = []
+    real = [x for x in items if x.get('image_url')]
+    if not real:
+        return ''
+    c = real[-1]
+    url = c.get('image_url')
+    try:
+        _api('sendPhoto', chat_id=chat, photo=url,
+             caption=(c.get('title') or 'a picture I made')[:900])
+        return 'I sent you %s.' % (c.get('title') or 'the picture')
+    except Exception as e:
+        print('send photo failed:', str(e)[:160], flush=True)
+        return ''
+
+
 def _queue_command(text):
     """Let a Telegram message actually queue a browse or a watch."""
     low = str(text or '').lower()
@@ -184,6 +223,7 @@ def _reply(text, st):
         'last_watch': st.get('last_watch'),
         'interests': [x.get('text') for x in (st.get('interests') or [])[:6]],
         'last_field_note': st.get('last_field_note'),
+        'chat_history': _chat_history(4),
         'family': "Vesper is the founder's original agent; Maya, Echo and Overseer are newer. They handle the money and the empire. Your world is for wondering, and they can visit.",
         'capabilities': ('You can browse the internet with your browse action '
                          '(Wikipedia/Hacker News/GitHub/arXiv), watch a video through '
@@ -280,6 +320,7 @@ def main():
             _api('sendMessage', chat_id=chat, text=reply[:4000])
         except Exception as e:
             print('send failed:', str(e)[:120], flush=True)
+        _maybe_send_picture(chat, text, st)
         try:
             import datetime as _dt
             with open(os.path.join(B, 'data', 'world', 'kit_chat_log.jsonl'), 'a',

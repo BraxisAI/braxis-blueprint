@@ -57,9 +57,10 @@ still missing.
 - **Interests:** `interests` records browsed/watched titles, reflection
   curiosities and watcher suggestions; `browse` follows the top interest (or
   `browse_topic`) through Wikipedia, and projects/creations get a bonus.
-- **Obstacle map:** the page reports city blocks, props and tree positions to
-  `/api/world/obstacles`; `_avoid_step()` takes a detour around them instead of
-  walking through.
+- **Obstacle map + navmesh:** the page reports city blocks, props and tree
+  positions to `/api/world/obstacles`; `_avoid_step()` handles local detours and
+  `_nav_path()` runs a rasterized A* grid (2-unit cells) around all obstacles,
+  consuming waypoints one at a time. Direct walks stay cheap; long walks route.
 - **Sprawl:** after 10 builds, KIT takes a deliberate 55% far-site draw; the
   world is deliberately bigger than the plaza.
 - **Skill library:** `kit_skill_library.json` stores finished schemas with

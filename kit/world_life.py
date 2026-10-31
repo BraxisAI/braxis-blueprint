@@ -25,6 +25,7 @@ They are ported here as a small, deterministic loop, not an LLM per decision.
 """
 import datetime as dt
 import hashlib
+import heapq
 import json
 import math
 import os
@@ -1072,6 +1073,98 @@ def _avoid_step(px, pz, tx, tz, step, builds, obstacles):
     return nx, nz
 
 
+NAV_STEP = 2.0
+NAV_MIN = -200.0
+NAV_MAX = 200.0
+
+
+def _nav_cell(x, z):
+    return (max(0, min(int((NAV_MAX - NAV_MIN) / NAV_STEP),
+                       int(round((x - NAV_MIN) / NAV_STEP)))),
+            max(0, min(int((NAV_MAX - NAV_MIN) / NAV_STEP),
+                       int(round((z - NAV_MIN) / NAV_STEP)))))
+
+
+def _nav_point(cell):
+    return (NAV_MIN + cell[0] * NAV_STEP, NAV_MIN + cell[1] * NAV_STEP)
+
+
+def _nav_blocked_cells(builds, obstacles):
+    """Rasterize the obstacle circles once; A* then checks a set, not 250 shapes."""
+    blocked = set()
+    span = int((NAV_MAX - NAV_MIN) / NAV_STEP)
+    for item, radius in ([(b, _obstacle_radius(b)) for b in builds] +
+                         [(o, float(o.get('r') or 1.0)) for o in obstacles]):
+        x = float(item.get('x') or 0)
+        z = float(item.get('z') or 0)
+        r = radius + 0.55
+        cx0, cz0 = _nav_cell(x - r, z - r)
+        cx1, cz1 = _nav_cell(x + r, z + r)
+        for cx in range(max(0, cx0), min(span, cx1) + 1):
+            for cz in range(max(0, cz0), min(span, cz1) + 1):
+                gx, gz = _nav_point((cx, cz))
+                if math.hypot(gx - x, gz - z) < r:
+                    blocked.add((cx, cz))
+    return blocked
+
+
+def _nav_path(sx, sz, tx, tz, builds, obstacles):
+    """Grid A* around trunks/builds. Returns waypoints after the start cell."""
+    start = _nav_cell(sx, sz)
+    goal = _nav_cell(tx, tz)
+    if start == goal:
+        return [(tx, tz)]
+
+    blocked = _nav_blocked_cells(builds, obstacles)
+
+    def free(c):
+        return c not in blocked
+
+    if not free(start):
+        for dx in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                if free((start[0] + dx, start[1] + dz)):
+                    start = (start[0] + dx, start[1] + dz)
+                    break
+            else:
+                continue
+            break
+    h = lambda c: math.hypot(c[0] - goal[0], c[1] - goal[1])
+    openq = [(h(start), 0.0, start)]
+    best = {start: 0.0}
+    parent = {}
+    seen = 0
+    while openq and seen < 7000:
+        _f, cost, cur = heapq.heappop(openq)
+        seen += 1
+        if cur == goal:
+            out = []
+            while cur in parent:
+                out.append(_nav_point(cur))
+                cur = parent[cur]
+            out.reverse()
+            out.append((tx, tz))
+            return out or [(tx, tz)]
+        for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1),
+                       (1, 1), (1, -1), (-1, 1), (-1, -1)):
+            nxt = (cur[0] + dx, cur[1] + dz)
+            if not (0 <= nxt[0] <= int((NAV_MAX - NAV_MIN) / NAV_STEP) and
+                    0 <= nxt[1] <= int((NAV_MAX - NAV_MIN) / NAV_STEP)):
+                continue
+            if not free(nxt):
+                continue
+            # no diagonal corner-cutting
+            if dx and dz and not (free((cur[0] + dx, cur[1])) and
+                                  free((cur[0], cur[1] + dz))):
+                continue
+            ng = cost + (1.41421356 if dx and dz else 1.0)
+            if ng < best.get(nxt, 1e18):
+                best[nxt] = ng
+                parent[nxt] = cur
+                heapq.heappush(openq, (ng + h(nxt), ng, nxt))
+    return None
+
+
 def _walk_to(state, place):
     p = LOCS[place]
     tx, tz = float(p['x']), float(p['z'])
@@ -1090,7 +1183,15 @@ def _walk_to(state, place):
                     break
             if found:
                 break
-    state['target'] = {'x': round(tx, 2), 'z': round(tz, 2)}
+    px = float((state.get('pos') or {}).get('x') or 0)
+    pz = float((state.get('pos') or {}).get('z') or 0)
+    path = _nav_path(px, pz, tx, tz, builds, obstacles)
+    if path:
+        state['nav_path'] = [{'x': round(x, 2), 'z': round(z, 2)} for x, z in path]
+        state['target'] = state['nav_path'][0]
+    else:
+        state['nav_path'] = []
+        state['target'] = {'x': round(tx, 2), 'z': round(tz, 2)}
     state['moving'] = True
     state['action'] = 'walking to %s' % p['label']
     lines = [
@@ -1110,6 +1211,7 @@ def _walk_to(state, place):
 def _start_action(state, name, place=None):
     place = place or ACTIONS[name][0]
     state['_act_place'] = place
+    state['nav_path'] = []
     state['action'] = name
     state['moving'] = False
     state['act_left'] = 12.0 + random.random() * 22.0
@@ -3848,12 +3950,20 @@ def tick(state):
         dist = math.hypot(dx, dz)
         step = SPEED * TICK
         if dist <= step or dist < 0.5:
-            state['pos'] = {'x': tx, 'z': tz}
-            state['moving'] = False
-            pending = state.get('_pending_action')
-            if pending not in ACTIONS:
-                pending = choose(state)
-            _start_action(state, pending, _action_place(state, pending))
+            path = state.get('nav_path') or []
+            if len(path) > 1:
+                path.pop(0)
+                state['nav_path'] = path
+                state['target'] = path[0]
+                state['pos'] = {'x': round(tx, 3), 'z': round(tz, 3)}
+            else:
+                state['nav_path'] = []
+                state['pos'] = {'x': tx, 'z': tz}
+                state['moving'] = False
+                pending = state.get('_pending_action')
+                if pending not in ACTIONS:
+                    pending = choose(state)
+                _start_action(state, pending, _action_place(state, pending))
         else:
             nx, nz = _avoid_step(px, pz, tx, tz, step,
                                  load_builds(), _load_obstacles())

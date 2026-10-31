@@ -111,6 +111,10 @@ still missing.
   The engine queues it, executes the steps, and records `practice_history`. A
   live ritual, **Dawn Tending** (`water plants`, `smell flowers`, `watch
   fountain`), is shown in the HUD/dashboard as `ritual: name · step 1 of 3`.
+- **Field notes:** `kit_study.py` takes one curiosity, reads a Wikipedia
+  summary, asks the free 550B model for a first-person `NOTE`, `SURPRISE` and
+  `QUESTION`, saves it to `kit_field_notes.jsonl`, and updates KIT's interests.
+  It runs every 4 hours and is shown in the world HUD and dashboard.
 - **Project steps:** `progress / target` is the number of matching actions,
   not a quality score. The HUD now says **step X of Y**; future projects use
   3–5 steps.
@@ -222,6 +226,7 @@ modules are in the private recovery archive.
 - `kit_watch_vm.py` — VM watch worker: TikTok via yt-dlp, local watch-skill,
   posts results to KIT.
 - `kit_poem.py` — free-writing poem worker; upgrades template poems.
+- `kit_study.py` — field-note worker: Wikipedia summary → free-model note.
 - `dashboard.html` — the standalone `/kit/` dashboard.
 - `kit_chat.py` — Telegram conversation loop.
 - `kit_reset.py` — archive/reset; `--blank` for self-invented projects.

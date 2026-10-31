@@ -59,6 +59,7 @@ SELF_MODEL_PATH = os.path.join(B, 'data', 'world', 'kit_self_model.json')
 WISHLIST_PATH = os.path.join(B, 'data', 'world', 'kit_wishlist.json')
 WATCHER_REPORT = os.path.join(B, 'data', 'world', 'kit_watcher.json')
 SONG_DIR = os.path.join(B, 'data', 'songs', 'Braxis_Songs', 'Kit')
+FIELD_NOTES = os.path.join(B, 'data', 'world', 'kit_field_notes.jsonl')
 EXTERNAL_LOG = os.path.join(B, 'data', 'world', 'kit_external_events.jsonl')
 SKILL_LIB = os.path.join(B, 'data', 'world', 'kit_skill_library.json')
 MAIL_OUT = os.path.join(B, 'data', 'world', 'kit_mailbox.jsonl')
@@ -3777,6 +3778,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {'ok': True, 'ts': _now()})
         elif path in ('/watcher', '/api/world/watcher'):
             self._send(200, _load_json(WATCHER_REPORT, {}))
+        elif path in ('/notes', '/api/world/notes'):
+            rows = []
+            try:
+                with open(FIELD_NOTES, encoding='utf-8') as f:
+                    for line in f.read().splitlines()[-60:]:
+                        try:
+                            rows.append(json.loads(line))
+                        except Exception:
+                            pass
+            except Exception:
+                rows = []
+            self._send(200, {'notes': rows[-50:]})
         elif path in ('/songs', '/api/world/songs'):
             songs = []
             try:
@@ -3811,6 +3824,40 @@ class Handler(BaseHTTPRequestHandler):
                     'path': str(data.get('path') or '')[:80],
                 })
             self._send(200, {'ok': True})
+            return
+        if path in ('/field-note', '/api/world/field-note'):
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+                raw = self.rfile.read(n) if n else b'{}'
+                data = json.loads(raw.decode('utf-8') or '{}')
+            except Exception:
+                self._send(400, {'error': 'bad json'})
+                return
+            topic = _clean(str(data.get('topic') or 'a curiosity'))[:80]
+            note = _clean(str(data.get('note') or ''))[:500]
+            if not note:
+                self._send(400, {'error': 'empty note'})
+                return
+            rec = {'ts': _now(), 'topic': topic,
+                   'title': str(data.get('title') or topic)[:160],
+                   'url': str(data.get('url') or '')[:300],
+                   'note': note,
+                   'surprise': _clean(str(data.get('surprise') or ''))[:300],
+                   'question': _clean(str(data.get('question') or ''))[:300]}
+            with LOCK:
+                st = load_state()
+                _interest_add(st, topic, 'study', 0.50)
+                if str(st.get('browse_topic') or '').lower() == topic.lower():
+                    st['browse_topic'] = ''
+                st['last_field_note'] = rec
+                st['recent'].insert(0, 'read about %s' % topic)
+                st['recent'] = st['recent'][:6]
+                st['thought'] = 'I read about %s. %s' % (topic, note[:140])
+                _decide(st, 'study', 'I read a field note about %s.' % topic)
+                if rec['question']:
+                    _wonder(st, rec['question'])
+                save_state(st)
+            self._send(200, {'ok': True, 'topic': topic})
             return
         if path in ('/realize', '/api/world/realize'):
             try:

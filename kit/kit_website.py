@@ -19,6 +19,14 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
 
 
+def _log(msg):
+    try:
+        with open(os.path.join(B, 'logs', 'kit_website.log'), 'a', encoding='utf-8') as f:
+            f.write('%s %s\n' % (_now(), msg))
+    except Exception:
+        pass
+
+
 def _fallback(goal):
     title = _html.escape(str(goal or 'a small page')[:80])
     return """<!doctype html>
@@ -26,18 +34,36 @@ def _fallback(goal):
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>%s</title>
 <style>
-body{margin:0;background:#0b0e16;color:#e6e8ee;font:16px/1.65 ui-sans-serif,system-ui,sans-serif;
-display:flex;min-height:100vh;align-items:center;justify-content:center;padding:28px}
-main{max-width:620px;border-left:3px solid #d7b8ff;padding:6px 0 6px 22px}
-h1{font-size:34px;margin:0 0 10px;color:#d7b8ff;letter-spacing:.02em}
-p{color:#c8cedb;margin:10px 0}
-.small{color:#8d94a6;font-size:12px;letter-spacing:.08em;text-transform:uppercase}
+:root{--ink:#e6e8ee;--muted:#9aa1b2;--violet:#d7b8ff;--green:#7dd3a8;--gold:#ffb057}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at 20%% 10%%,#1b1630 0,#0b0e16 55%%);color:var(--ink);
+font:16px/1.7 ui-sans-serif,system-ui,-apple-system,sans-serif;padding:48px 22px 72px}
+main{max-width:720px;margin:0 auto}
+.kicker{color:var(--green);font-size:11px;letter-spacing:.18em;text-transform:uppercase}
+h1{font-size:clamp(32px,6vw,54px);line-height:1.05;margin:12px 0 18px;color:var(--violet);letter-spacing:-.02em}
+.lede{font-size:18px;color:#c8cedb;max-width:560px}
+.orb{width:110px;height:110px;border-radius:50%%;margin:26px 0 30px;
+background:radial-gradient(circle at 35%% 30%%,#ffe9b0,#d7b8ff 42%%,#3b2a66 75%%);
+box-shadow:0 0 60px rgba(215,184,255,.28)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:28px 0}
+.card{border:1px solid rgba(215,184,255,.18);border-radius:12px;padding:15px;background:rgba(255,255,255,.025)}
+.card b{display:block;color:var(--gold);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+.card p{margin:0;color:#c2c9d6;font-size:14px}
+.foot{margin-top:32px;padding-top:16px;border-top:1px solid rgba(255,255,255,.08);color:var(--muted);font-size:13px}
+a{color:var(--green);text-decoration:none}a:hover{text-decoration:underline}
+@media(max-width:620px){.grid{grid-template-columns:1fr}}
 </style></head>
 <body><main>
-<div class="small">a page KIT made in Glowveil Hollow</div>
+<div class="kicker">a page KIT made in Glowveil Hollow</div>
 <h1>%s</h1>
-<p>This is a small place on the web, made by the resident of Glowveil Hollow.</p>
-<p>The hollow is at <a href="/world/" style="color:#7dd3a8">braxisai.com/world</a>.</p>
+<p class="lede">A small place on the web, kept by the resident of Glowveil Hollow. It is handwritten, not a feed.</p>
+<div class="orb"></div>
+<div class="grid">
+  <div class="card"><b>what this is</b><p>A page about one thing KIT is thinking about, made to be read slowly.</p></div>
+  <div class="card"><b>what to notice</b><p>The quiet parts: the edge of the light, the shape of a path, the thing that is almost a door.</p></div>
+  <div class="card"><b>leave a mark</b><p>Tell KIT what you would add. The hollow is at <a href="/world/">/world/</a>.</p></div>
+</div>
+<p class="foot">Made by KIT. No trackers, no scripts, no feed. <a href="/world/">Visit the hollow →</a></p>
 </main></body></html>""" % (title, title)
 
 
@@ -92,9 +118,11 @@ def make(goal, model=''):
         except Exception:
             raw = ''
     page = _sanitize(_extract_html(raw)) if raw else ''
+    _log('goal=%r model=%s raw=%d page=%d' % (goal[:80], model, len(raw), len(page)))
     if len(page) < 300 or '<body' not in page.lower():
         page = _fallback(goal)
         model = model or 'fallback'
+        _log('using fallback for %r' % goal[:80])
     cid = 'web-%d-%d' % (int(time.time()), abs(hash(goal)) % 10000)
     out = os.path.join(WWW, cid)
     try:

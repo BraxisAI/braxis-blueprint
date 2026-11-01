@@ -84,7 +84,7 @@
 <div class="sub" id="worldTag">a city that grows one small thing at a time</div></div>
 <div id="load">loading the city…</div>
 <button id="wideBtn" title="see the whole hollow" style="position:fixed;left:16px;top:70px;z-index:7;background:rgba(11,14,22,.82);border:1px solid rgba(215,184,255,.35);color:#d7b8ff;border-radius:999px;padding:7px 12px;font-size:11px;cursor:pointer;letter-spacing:.08em">wide view</button>
-<div id="note">Glowveil Hollow is live. Drag to orbit · scroll or pinch to zoom · click a build or KIT to inspect · type in the talk box to speak · follow / wide view change the camera · leave a stone, flower, song, or idea.<span id="kitAge"></span></div>
+<div id="note">Glowveil Hollow is live. Drag to orbit · WASD / arrows walk · scroll or pinch to zoom · click a build or KIT to inspect · type in the talk box to speak · follow / wide view change the camera · leave a stone, flower, song, or idea.<span id="kitAge"></span></div>
 <div id="res">
   <div class="mood" id="resMood">waking up</div>
   <h2 id="resName">the resident</h2>
@@ -1681,8 +1681,49 @@ composer.addPass(ditherPass);
 addEventListener('resize', () => {
   ditherPass.uniforms.resolution.value.set(innerWidth, innerHeight);
 });
+// Keyboard navigation: WASD / arrows move the camera and its look point
+// together, so the hollow is explorable without dragging. Q/E step in and out.
+const NAV_KEYS = new Set();
+addEventListener('keydown', e => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '')) return;
+  const k = e.key.toLowerCase();
+  if (['w','a','s','d','q','e','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) {
+    NAV_KEYS.add(k); e.preventDefault();
+  }
+  if (k === 'shift') NAV_KEYS.add('shift');
+});
+addEventListener('keyup', e => NAV_KEYS.delete(e.key.toLowerCase()));
+addEventListener('blur', () => NAV_KEYS.clear());
+let _navLast = performance.now();
+function keyboardNav(){
+  const now = performance.now();
+  const dt = Math.min(.05, (now - _navLast) / 1000);
+  _navLast = now;
+  let f = 0, r = 0, z = 0;
+  if (NAV_KEYS.has('w') || NAV_KEYS.has('arrowup')) f += 1;
+  if (NAV_KEYS.has('s') || NAV_KEYS.has('arrowdown')) f -= 1;
+  if (NAV_KEYS.has('d') || NAV_KEYS.has('arrowright')) r += 1;
+  if (NAV_KEYS.has('a') || NAV_KEYS.has('arrowleft')) r -= 1;
+  if (NAV_KEYS.has('e')) z += 1;
+  if (NAV_KEYS.has('q')) z -= 1;
+  if (!f && !r && !z) return;
+  const speed = (NAV_KEYS.has('shift') ? 72 : 28) * dt;
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
+  const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
+  const move = dir.multiplyScalar(f * speed).add(right.multiplyScalar(r * speed));
+  if (z) {
+    const toward = new THREE.Vector3().subVectors(controls.target, camera.position).normalize();
+    move.add(toward.multiplyScalar(z * speed));
+  }
+  camera.position.add(move);
+  controls.target.add(move);
+  _follow = false;
+  controls.autoRotate = false;
+}
 (function loop(){
   requestAnimationFrame(loop);
+  keyboardNav();
   controls.update();
   animateResident();
   ditherPass.uniforms.time.value = performance.now() / 1000;

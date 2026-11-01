@@ -112,7 +112,7 @@
   <a href="https://buy.stripe.com/7sYbJ120g39I5Kq34F7ES22" target="_blank" rel="noopener" title="Support KIT's world">♥ support KIT</a>
 </div>
 <div id="toast"></div>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/","three/examples/jsm/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -211,6 +211,39 @@ const stoneTex = canvasTex(512, (x, s) => {
   x.strokeStyle = 'rgba(28,26,24,.45)'; x.lineWidth = 2;
   for (let i=0;i<=n;i++){ x.beginPath(); x.moveTo(i*step,0); x.lineTo(i*step,s); x.stroke(); x.beginPath(); x.moveTo(0,i*step); x.lineTo(s,i*step); x.stroke(); }
 }, [7,7]);
+// CC0 PBR maps from ambientCG; procedural maps remain the fallback while these load.
+const ACG = 'https://braxisai.com/media/world/textures/ambientcg/';
+const acgLoader = new THREE.TextureLoader();
+function acgSet(folder, file, repeat, srgb){
+  const t = acgLoader.load(ACG + folder + '/' + file);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat[0], repeat[1]);
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+const PBR = {
+  grass: {
+    color: acgSet('grass','Grass005_1K-JPG_Color.jpg',[55,55],true),
+    normal: acgSet('grass','Grass005_1K-JPG_NormalGL.jpg',[55,55],false),
+    rough: acgSet('grass','Grass005_1K-JPG_Roughness.jpg',[55,55],false)
+  },
+  ground: {
+    color: acgSet('ground','Ground037_1K-JPG_Color.jpg',[12,12],true),
+    normal: acgSet('ground','Ground037_1K-JPG_NormalGL.jpg',[12,12],false),
+    rough: acgSet('ground','Ground037_1K-JPG_Roughness.jpg',[12,12],false)
+  },
+  rock: {
+    color: acgSet('rock','Rock030_1K-JPG_Color.jpg',[2,2],true),
+    normal: acgSet('rock','Rock030_1K-JPG_NormalGL.jpg',[2,2],false),
+    rough: acgSet('rock','Rock030_1K-JPG_Roughness.jpg',[2,2],false)
+  },
+  wood: {
+    color: acgSet('wood','Wood066_1K-JPG_Color.jpg',[2,2],true),
+    normal: acgSet('wood','Wood066_1K-JPG_NormalGL.jpg',[2,2],false),
+    rough: acgSet('wood','Wood066_1K-JPG_Roughness.jpg',[2,2],false)
+  }
+};
 const shadowTex = (() => {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const x = c.getContext('2d');
@@ -278,6 +311,13 @@ const ground = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
   color:0xc7d0b5, map:groundTex, bumpMap:groundTex, bumpScale:.14,
   emissive:0x18220f, emissiveIntensity:.3, roughness:.9, metalness:.02
 }));
+ground.material.map = PBR.grass.color;
+ground.material.normalMap = PBR.grass.normal;
+ground.material.normalScale.set(.8,.8);
+ground.material.roughnessMap = PBR.grass.rough;
+ground.material.bumpMap = null;
+ground.material.color.set(0xffffff);
+ground.material.needsUpdate = true;
 ground.receiveShadow = false; scene.add(ground);
 
 // the sea — where the heightmap sits at sea level, water shows
@@ -339,6 +379,14 @@ for (let i=0; i<19; i++){  // 75% fewer high-rises: let the hollow breathe
   cityMat.push(b);
   OBSTACLES.push({x:x, z:z, r:Math.max(1.8, Math.max(w,d)*0.55)});
 }
+for (const cm of cityMat) {
+  const m = cm.material;
+  if (!m) continue;
+  m.map = PBR.rock.color; m.normalMap = PBR.rock.normal;
+  m.roughnessMap = PBR.rock.rough; m.color.set(0xffffff);
+  m.normalScale.set(.8,.8); m.needsUpdate = true;
+}
+
 // a few warm street lanterns with real light
 for (const [lx, lz] of [[30,4],[18,4],[8,18],[-24,4]]){
   const pl = new THREE.PointLight(0xffa45a, 4.5, 16, 2);
@@ -349,6 +397,12 @@ for (const [lx, lz] of [[30,4],[18,4],[8,18],[-24,4]]){
 const plaza = new THREE.Mesh(new THREE.CylinderGeometry(24, 24, .5, 48),
   new THREE.MeshStandardMaterial({color:0xb7b4aa, map:stoneTex, roughness:.78,
                                   metalness:.05, bumpMap:stoneTex, bumpScale:.06}));
+plaza.material.map = PBR.rock.color;
+plaza.material.normalMap = PBR.rock.normal;
+plaza.material.roughnessMap = PBR.rock.rough;
+plaza.material.bumpMap = null;
+plaza.material.color.set(0xffffff);
+plaza.material.needsUpdate = true;
 plaza.position.y = 5.45; plaza.receiveShadow = true; scene.add(plaza);
 function road(x1,z1,x2,z2,w=3.2){
   const len = Math.hypot(x2-x1, z2-z1);
@@ -715,11 +769,28 @@ function surfaceY(x, z){
 }
 
 // instanced ground cover: one draw call, spread across the whole hollow
+let grassWind = null;
 try {
   const _dummy = new THREE.Object3D();
   const _grassN = 1400;
   const _gGeo = new THREE.ConeGeometry(.085, .75, 3);
   const _gMat = new THREE.MeshStandardMaterial({color:0x4f7a3f, roughness:.95});
+  grassWind = { uTime: {value: 0}, uKit: {value: new THREE.Vector3(0,0,0)} };
+  _gMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = grassWind.uTime;
+    shader.uniforms.uKit = grassWind.uKit;
+    shader.vertexShader = "uniform float uTime;\nuniform vec3 uKit;\n" + shader.vertexShader;
+    shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', `
+      #include <begin_vertex>
+      vec3 iw = instanceMatrix[3].xyz;
+      float sway = sin(uTime * 1.4 + iw.x * .25 + iw.z * .19) * .055;
+      float push = smoothstep(2.4, 0.0, distance(iw.xz, uKit.xz));
+      vec2 away = normalize(iw.xz - uKit.xz + vec2(.001));
+      float bend = push * .55 * max(0.0, position.y + .3);
+      transformed.x += sway + away.x * bend;
+      transformed.z += sway * .6 + away.y * bend;
+    `);
+  };
   const _grass = new THREE.InstancedMesh(_gGeo, _gMat, _grassN);
   _grass.castShadow = false; _grass.receiveShadow = true;
   for (let i=0;i<_grassN;i++){
@@ -1401,6 +1472,10 @@ addEventListener('resize', () => {
   controls.update();
   animateResident();
   ditherPass.uniforms.time.value = performance.now() / 1000;
+  if (grassWind) {
+    grassWind.uTime.value = performance.now() / 1000;
+    grassWind.uKit.value.copy(resident.position);
+  }
   composer.render();
 })();
 setTimeout(()=>{ document.getElementById('load').style.display='none'; }, 6000);

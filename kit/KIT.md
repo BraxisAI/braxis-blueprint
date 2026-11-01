@@ -117,6 +117,9 @@ still missing.
 - **N8AO:** the world uses N8AO 2.0.1 in Medium quality with half-resolution
   AO, loaded dynamically with a plain-render fallback. Stock SSAO and Bokeh
   were tested and removed; they washed out or blurred the scene.
+- **PBR + wind:** ambientCG CC0 maps drive grass, stone, rock and wood. The
+  1,400 instanced grass blades sway in the wind and bend away from KIT's
+  position; the procedural maps remain the fallback.
 ## Companion and dashboard
 
 - **Juniper, the first companion.** KIT has a `befriend` action. On
@@ -242,7 +245,9 @@ modules are in the private recovery archive.
   Ultra**; fallback is the free background chain. **24 autonomous calls/day**
   shared by the reflection and event summaries; chat is on demand. Paid
   OpenRouter lanes are reserved for Vesper/MAYA and never enter KIT's chain.
-- Procedural three.js/canvas art; a real image lane at most 1/day.
+- Three.js/WebGL with CC0 PBR maps from ambientCG (Grass005, Ground037,
+  Rock030, Wood066) plus procedural canvas fallbacks; a real image lane at
+  most 1/day.
 - Existing ACE music lane at most 1 track/day.
 - Playwright + ffmpeg for clips; no model.
 - JSON memory; no vector DB for one resident.

@@ -456,7 +456,33 @@ function road(x1,z1,x2,z2,w=3.2){
   m.rotation.y = -Math.atan2(z2-z1, x2-x1);
   m.receiveShadow = true; scene.add(m);
 }
-road(24,0,2,2); road(-24,0,-2,2); road(0,24,2,2); road(0,-24,-2,2);
+// a real street grid: a ring road, radial avenues and four outer roads
+const RING = 54;
+for (let i=0;i<12;i++){
+  const a1=i*Math.PI/6, a2=(i+1)*Math.PI/6;
+  road(Math.cos(a1)*RING, Math.sin(a1)*RING,
+       Math.cos(a2)*RING, Math.sin(a2)*RING, 4.4);
+}
+for (let i=0;i<8;i++){
+  const a=i*Math.PI/4;
+  road(Math.cos(a)*24, Math.sin(a)*24,
+       Math.cos(a)*RING, Math.sin(a)*RING, 3.8);
+}
+for (const a of [0, Math.PI/2, Math.PI, Math.PI*1.5]){
+  road(Math.cos(a)*RING, Math.sin(a)*RING,
+       Math.cos(a)*145, Math.sin(a)*145, 4.4);
+}
+// street lamps at the ring
+for (let i=0;i<12;i++){
+  const a=i*Math.PI/6, x=Math.cos(a)*(RING-3.2), z=Math.sin(a)*(RING-3.2);
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.08,.12,3.2,7),
+    new THREE.MeshStandardMaterial({color:0x3a3f4a, roughness:.8}));
+  pole.position.set(x, 6.9, z); pole.castShadow=true; scene.add(pole);
+  const lamp=new THREE.Mesh(new THREE.SphereGeometry(.20,10,8),
+    new THREE.MeshStandardMaterial({color:0xffb057, emissive:0xffb057, emissiveIntensity:.9}));
+  lamp.position.set(x, 8.55, z); scene.add(lamp);
+}
+
 
 // label sprites
 const LABELS = [];

@@ -4961,12 +4961,20 @@ class Handler(BaseHTTPRequestHandler):
                                       (st.get('interests') or [])[:4])
                 recent = '; '.join(str(x) for x in (st.get('recent') or [])[:3])
             prompt = (
-                'You are %s, a small garden-robot who lives in Glowveil Hollow. '
-                'A visitor in your world just typed: "%s". You are %s, currently %s, '
-                'working on %s. Your interests: %s. Recent life: %s. Reply in 1-3 '
-                'sentences, plain text, no markdown. Be honest about what you can '
-                'and cannot do; never claim to execute code or payments. If it fits, '
-                'mention something you are actually working on.' % (
+                'You are %s, a small AI resident who lives in Glowveil Hollow. '
+                'A visitor in your world just typed: "%s". '
+                'The real controls are: drag to orbit, scroll or pinch to zoom, '
+                'click a build or the resident to inspect it, type in the talk box '
+                'to speak to you, and use the follow and wide-view buttons to change '
+                'the camera. Visitors can leave a stone, a flower, a song, or an idea. '
+                'If they ask how to play, answer with those controls. '
+                'You are an AI resident made by Braxis; you have no invented caretaker, '
+                'family, or origin story. Never invent one. '
+                'You are %s, currently %s, working on %s. Your interests: %s. '
+                'Recent life: %s. Reply in 1-3 sentences, plain text, no markdown. '
+                'Be honest about what you can and cannot do; never claim to execute '
+                'code or payments. If it fits, mention something you are actually '
+                'working on.' % (
                     name, text, mood, act, project, interests or 'none yet',
                     recent or 'quiet'))
             reply = ''

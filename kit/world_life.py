@@ -134,6 +134,7 @@ ACTIONS = {
     'befriend':       ('plaza',        {'social': 1.8, 'comfort': .5, 'curiosity': .3, 'energy': -.2}, .97),
     'talk to companion': ('plaza',      {'social': 1.4, 'comfort': .5, 'energy': -.1}, .92),
     'post':           ('library',      {'social': 1.1, 'mastery': .4, 'curiosity': .2, 'energy': -.1}, .78),
+    'build a web page': ('library',    {'mastery': 1.1, 'curiosity': .9, 'social': .2, 'energy': -.3}, .55),
     'sketch':         ('library',      {'curiosity': .8, 'mastery': .6, 'energy': -.2}, .82),
     'carve':          ('workshop',     {'mastery': 1.1, 'comfort': .3, 'energy': -.3}, .78),
     'sculpt':         ('workshop',     {'mastery': 1.2, 'curiosity': .4, 'energy': -.5}, .86),
@@ -995,6 +996,12 @@ def choose(state):
                 cooldown -= 2.5
             elif age > 12 * 3600:
                 cooldown += 0.45
+        if name == 'build a web page':
+            age = time.time() - float(state.get('last_web_ts') or 0)
+            if age < 10 * 3600:
+                cooldown -= 3.0
+            elif age > 20 * 3600:
+                cooldown += 0.4
         if name == 'define':
             age = time.time() - float(state.get('last_define_ts') or 0)
             if age < 24 * 3600:
@@ -3304,6 +3311,47 @@ def _write_code(state):
               % (goal[:80], text[:160]))
 
 
+def _build_web_page(state):
+    """KIT makes a small static page and publishes it under /world/made/."""
+    goal = _code_goal(state)
+    try:
+        from weapons import kit_website
+        res = kit_website.make(goal)
+    except Exception as e:
+        res = {'ok': False, 'error': '%s: %s' % (type(e).__name__, str(e)[:160])}
+    if not res.get('ok'):
+        state['thought'] = 'I tried to make a page and the page did not open.'
+        log('web page failed: %s' % str(res.get('error'))[:160])
+        return
+    cid, url = res['id'], res['url']
+    creation = {
+        'id': cid, 'medium': 'web', 'subject': goal,
+        'title': 'a web page about %s' % goal,
+        'url': url, 'html': str(res.get('html') or '')[:12000],
+        'color': 0x7dd3a8, 'level': 1, 'at': _now(),
+        'text_engine': res.get('model') or 'web',
+        'lineage': {'from_medium': 'web', 'from_subject': goal},
+    }
+    try:
+        items = load_creations()
+        items.append(creation)
+        save_creations(items)
+        state['creations'] = [c.get('id') for c in items[-40:]]
+        state['last_creation'] = creation
+    except Exception as e:
+        log('web creation failed: %s' % str(e)[:120])
+    state.setdefault('recent_mediums', []).append('web')
+    state['recent_mediums'] = state['recent_mediums'][-12:]
+    state['last_web_ts'] = time.time()
+    state['last_web'] = {'id': cid, 'goal': goal, 'url': url}
+    state['thought'] = 'I put a page on the web: %s' % goal[:90]
+    state['recent'].insert(0, 'made a web page: %s' % goal[:50])
+    state['recent'] = state['recent'][:6]
+    _decide(state, 'web', 'I made a web page about %s.' % goal)
+    _wonder(state, 'I made a page about %s. What would a visitor add to it?' % goal)
+    _tg_event(state, 'I made a web page about %s: %s' % (goal[:80], url))
+
+
 def _invent(state):
     """Turn a desire or a wonder into a project KIT names itself."""
     bits = []
@@ -3612,8 +3660,12 @@ def _do_post(state):
                 if p not in ('x', 'twitter')]
     except Exception:
         rows = []
+    # Bluesky and Mastodon are capped at 0 by the evaluator (0.00 views/post),
+    # so posting there only parks rows in the queue forever. KIT posts where
+    # the queue actually drains: Facebook and LinkedIn.
+    rows = [p for p in rows if p in ('facebook', 'linkedin')]
     if not rows:
-        rows = ['mastodon', 'bluesky', 'facebook', 'linkedin']
+        rows = ['facebook', 'linkedin']
     now_iso = _now()
     try:
         import sqlite3
@@ -3752,6 +3804,8 @@ def _finish_action(state, name):
         _experiment(state)
     if name == 'code':
         _write_code(state)
+    if name == 'build a web page':
+        _build_web_page(state)
     if name == 'invent':
         _invent(state)
     if name == 'define':
@@ -4632,6 +4686,15 @@ def tick(state):
     return state
 
 
+def _request_ip(handler):
+    """nginx proxies every request from 127.0.0.1. Use the real client IP it
+    sets in X-Forwarded-For so impressions and rate limits are per visitor."""
+    xff = handler.headers.get('X-Forwarded-For') or ''
+    if xff:
+        return xff.split(',')[0].strip()
+    return handler.client_address[0]
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, obj):
         body = json.dumps(obj).encode('utf-8')
@@ -4673,6 +4736,14 @@ class Handler(BaseHTTPRequestHandler):
                 rows = []
             self._send(200, {'query': q, 'memories': rows,
                              'error': '' if rows else 'no memories yet'})
+        elif path in ('/journal', '/api/world/journal'):
+            try:
+                with open(JOURNAL, encoding='utf-8') as f:
+                    text = f.read()
+            except Exception:
+                text = ''
+            self._send(200, {'markdown': text,
+                             'url': 'https://braxisai.com/world/journal/'})
         elif path in ('/notes', '/api/world/notes'):
             rows = []
             try:
@@ -4945,7 +5016,7 @@ class Handler(BaseHTTPRequestHandler):
             if not text:
                 self._send(400, {'error': 'empty message'})
                 return
-            ip = self.client_address[0]
+            ip = _request_ip(self)
             now = time.time()
             with LOCK:
                 if now - float(CHAT_LAST.get(ip, 0)) < 3.0:
@@ -5021,7 +5092,7 @@ class Handler(BaseHTTPRequestHandler):
         if kind not in OFFER_EFFECTS and kind != 'idea':
             self._send(400, {'error': 'unknown offering'})
             return
-        ip = self.client_address[0]
+        ip = _request_ip(self)
         now = time.time()
         with LOCK:
             if now - float(OFFER_LAST.get(ip, 0)) < 2.0:

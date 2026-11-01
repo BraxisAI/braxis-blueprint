@@ -252,6 +252,7 @@ function render(s, c, b, w, S, N) {
 }
 
 function artifactKind(x){
+  if (x.medium === 'web') return ['web page','code'];
   if (x.medium === 'code') return ['code','code'];
   if (x.image_url) return ['image','image'];
   if (x.audio_url) return ['audio','audio'];
@@ -270,14 +271,15 @@ function openCreation(id){
     (c.text ? '<div class="small" style="margin-top:8px"><b>what it printed</b></div><pre class="code">'+esc(c.text)+'</pre>' : '')) : '';
   const poem = (c.medium !== 'code' && c.text) ? '<div class="poem">'+esc(c.text)+'</div>' : '';
   const audio = c.audio_url ? '<audio controls preload="none" src="'+esc(c.audio_url)+'"></audio><div class="tiny"><a href="'+esc(c.audio_url)+'" target="_blank" rel="noopener">open audio file</a></div>' : '';
+  const web = c.medium === 'web' && c.url ? '<div class="small" style="margin-top:8px"><a class="btn" href="'+esc(c.url)+'" target="_blank" rel="noopener">visit the page</a></div>' : '';
   const buttons = [];
-  if (!c.image_url && c.medium !== 'code') buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'image\')">make a real image</button>');
+  if (!c.image_url && c.medium !== 'code' && c.medium !== 'web') buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'image\')">make a real image</button>');
   if (c.medium === 'sing' && !c.audio_url) buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'song\')">make the song</button>');
   if (c.text && c.text_engine !== 'llm' && c.medium !== 'code') buttons.push('<button class="btn" onclick="realize(\''+esc(c.id)+'\',\'poem\')">rewrite as a real poem</button>');
   $('modalBody').innerHTML =
     '<h1 style="margin:2px 0 4px;font-size:22px;color:var(--gold)">'+esc(c.title||c.medium||'a creation')+'</h1>'+
     '<div class="small muted">'+badge(kind,cls)+esc(c.medium||'')+(c.subject?' · '+esc(c.subject):'')+(c.at?' · '+esc(fmt(c.at)):'')+'</div>'+
-    img+code+poem+audio+
+    img+code+poem+audio+web+
     '<div class="tiny muted" style="margin-top:8px">creation id: '+esc(c.id||'')+(c.image_prompt?' · prompt: '+esc(short(c.image_prompt,240)):'')+'</div>'+
     '<div>'+buttons.join('')+'</div>'+
     '<div class="tiny" id="realizeMsg" style="margin-top:8px"></div>';

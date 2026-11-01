@@ -50,8 +50,19 @@
  #wishesBtn{margin-top:6px;background:transparent;border:1px solid rgba(125,211,168,.4);color:#7dd3a8;border-radius:999px;padding:6px 10px;font-size:10px;cursor:pointer;width:100%;letter-spacing:.08em}
  #wishesBtn:hover{border-color:#7dd3a8;background:#12251f}
  @media(max-width:720px){#wishes{width:210px;bottom:96px;font-size:10px}}
- #res #follow, #res #share, #res #wideBtn, #res #dashBtn{margin-top:9px;background:transparent;border:1px solid rgba(215,184,255,.3);color:#d7b8ff;border-radius:999px;padding:6px 10px;font-size:10px;cursor:pointer;width:100%;letter-spacing:.08em}
- #res #follow:hover, #res #share:hover, #res #wideBtn:hover, #res #dashBtn:hover{border-color:#d7b8ff;background:#1a1f2e}
+ #res #follow, #res #share, #res #wideBtn, #res #dashBtn, #res #gameBtn{margin-top:9px;background:transparent;border:1px solid rgba(215,184,255,.3);color:#d7b8ff;border-radius:999px;padding:6px 10px;font-size:10px;cursor:pointer;width:100%;letter-spacing:.08em}
+ #res #follow:hover, #res #share:hover, #res #wideBtn:hover, #res #dashBtn:hover, #res #gameBtn:hover{border-color:#d7b8ff;background:#1a1f2e}
+ #game{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:10;background:rgba(11,14,22,.96);border:1px solid rgba(215,184,255,.35);border-radius:16px;padding:16px 18px 14px;width:272px;display:none;box-shadow:0 18px 60px rgba(0,0,0,.55)}
+ #game .ghead{display:flex;justify-content:space-between;align-items:center;color:#d7b8ff;font-size:13px;letter-spacing:.06em}
+ #game .ghead button{background:transparent;border:0;color:#8a90a0;font-size:18px;cursor:pointer;line-height:1}
+ #gameStatus{color:#e6e8ee;font-size:11px;margin:7px 0 10px;min-height:15px}
+ #gameBoard{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+ #gameBoard button{aspect-ratio:1;border:1px solid rgba(215,184,255,.22);background:#151a26;color:#d7b8ff;font-size:30px;border-radius:9px;cursor:pointer;font-weight:700}
+ #gameBoard button:hover{background:#1c2230}
+ #gameBoard button.x{color:#d7b8ff}
+ #gameBoard button.o{color:#7dd3a8}
+ #gameBoard button.win{border-color:#ffb057;background:#2a1a14}
+ #gameReset{margin-top:10px;width:100%;background:transparent;border:1px solid rgba(125,211,168,.4);color:#7dd3a8;border-radius:999px;padding:7px;font-size:11px;cursor:pointer}
  #res #share{margin-top:6px}#res #dashBtn{margin-top:6px;border-color:rgba(255,176,87,.4);color:#ffb057}
  #res .brow{display:flex;justify-content:space-between;color:#8aa0b8;font-size:9px;letter-spacing:.08em;text-transform:uppercase;margin-top:4px}
  #res .bar{height:4px;background:#1c2230;border-radius:4px;overflow:hidden;margin:2px 0 2px}
@@ -73,7 +84,7 @@
 <div class="sub" id="worldTag">a city that grows one small thing at a time</div></div>
 <div id="load">loading the city…</div>
 <button id="wideBtn" title="see the whole hollow" style="position:fixed;left:16px;top:70px;z-index:7;background:rgba(11,14,22,.82);border:1px solid rgba(215,184,255,.35);color:#d7b8ff;border-radius:999px;padding:7px 12px;font-size:11px;cursor:pointer;letter-spacing:.08em">wide view</button>
-<div id="note">Glowveil Hollow is live. Drag to orbit · scroll or pinch to zoom · click a build or KIT to inspect · type in the talk box to speak · follow / wide view change the camera · leave a stone, flower, song, or idea.</div>
+<div id="note">Glowveil Hollow is live. Drag to orbit · scroll or pinch to zoom · click a build or KIT to inspect · type in the talk box to speak · follow / wide view change the camera · leave a stone, flower, song, or idea.<span id="kitAge"></span></div>
 <div id="res">
   <div class="mood" id="resMood">waking up</div>
   <h2 id="resName">the resident</h2>
@@ -93,10 +104,12 @@
   <div id="bars"></div>
   <div class="recent" id="resRecent"></div>
   <div class="recent" id="resThoughts" style="opacity:.75"></div>
+  <button id="gameBtn">play tic-tac-toe with KIT</button>
   <button id="follow">follow Kit</button>
   <button id="share">share this world</button>
   <button id="galleryBtn">KIT's gallery</button>
   <button id="wishesBtn">KIT's wishes</button>
+  <a id="journalBtn" href="/world/journal/" style="display:block;margin-top:9px;text-align:center;border:1px solid rgba(215,184,255,.3);color:#d7b8ff;border-radius:999px;padding:6px 10px;font-size:10px;letter-spacing:.08em;text-decoration:none">KIT's journal</a>
   <button id="dashBtn">KIT dashboard</button><!-- KIT-NOTEBOOK-CTA --><a id="notebookBtn" href="/builds/kit-notebook/" style="display:block;margin-top:9px;text-align:center;background:linear-gradient(90deg,#7a4a2a,#b45309);color:#fff;border-radius:999px;padding:7px 10px;font-size:10px;letter-spacing:.08em;text-decoration:none;font-weight:700">KIT's notebook — $7</a>
 </div>
 <div id="gallery"><h3>KIT's gallery</h3><div id="galleryList"></div></div>
@@ -110,6 +123,12 @@
   <button data-offer="flower" title="leave a flower">🌸 flower</button>
   <button data-offer="song" title="hum a tune for KIT">🎵 hum</button>
   <a href="https://buy.stripe.com/7sYbJ120g39I5Kq34F7ES22" target="_blank" rel="noopener" title="Support KIT's world">♥ support KIT</a>
+</div>
+<div id="game">
+  <div class="ghead"><span>tic-tac-toe with KIT</span><button id="gameClose" aria-label="close">×</button></div>
+  <div id="gameStatus">you are X. your move.</div>
+  <div id="gameBoard"></div>
+  <button id="gameReset">play again</button>
 </div>
 <div id="toast"></div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/","three/examples/jsm/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
@@ -874,9 +893,19 @@ function updateRes(){
   el('resCreation').textContent = lc ? ('latest: ' + (lc.title || lc.medium || 'a creation')) : '';
   el('resSelf').textContent = R.self_observation || R.self_model || '';
   el('resEmotion').textContent = (R.emotion_top && R.emotion_top.length) ? ('feeling: ' + R.emotion_top.slice(0,3).map(e => e.name + ' ' + e.value).join(' · ')) : '';
+  const _born = R.born ? new Date(R.born) : null;
+  let _days = 0, _hours = 0;
+  if (_born && !isNaN(_born)) {
+    const _ms = Math.max(0, Date.now() - _born.getTime());
+    _days = Math.floor(_ms / 86400000);
+    _hours = Math.floor((_ms % 86400000) / 3600000);
+  }
+  const _age = _born ? ' · day ' + (_days + 1) + ' · ' + (_days ? _days + 'd ' : '') + _hours + 'h here' : '';
+  const _ageNote = _born ? (' KIT has been here ' + (_days ? _days + ' day' + (_days === 1 ? '' : 's') + ' ' : '') + _hours + 'h (day ' + (_days + 1) + ').') : '';
   el('resMeta').textContent = 'blueprints ' + ((R.blueprints || []).length) +
     ' · builds ' + (R.builds || 0) + ' · page loads ' + (R.visits_total || 0) + ' · known visitors ' + Object.keys(R.visitor_impressions || {}).length + ' · offerings ' + (R.offerings || 0) + ' · signals ' + (R.signals_total || 0) + ' · resonance ' + Number(R.resonance || 0).toFixed(2) +
-    (R.pronouns ? ' · ' + R.pronouns : '');
+    (R.pronouns ? ' · ' + R.pronouns : '') + _age;
+  el('kitAge').textContent = _ageNote;
   for (const [k] of DRIVE_LABELS) {
     const v = Math.max(0, Math.min(10, (R.drives && R.drives[k] !== undefined) ? R.drives[k] : 5));
     const bar = el('bar-'+k); if (bar) bar.style.width = (v*10)+'%';
@@ -957,6 +986,94 @@ el('wideBtn').addEventListener('click', ()=>{
   camera.position.set(0, 105, 245);
   controls.update();
   toast('The whole hollow, for a moment.');
+});
+
+// ---------------------------------------------------------------- game ----
+const GAME = {b: Array(9).fill(''), over: false, busy: false};
+const GAME_WINS = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+function gameWinner(b){
+  for (const [a,c,d] of GAME_WINS) if (b[a] && b[a] === b[c] && b[a] === b[d]) return b[a];
+  return b.every(Boolean) ? 'draw' : null;
+}
+function gameRender(){
+  const board = el('gameBoard');
+  board.innerHTML = GAME.b.map((v,i) =>
+    `<button data-i="${i}" class="${v === 'X' ? 'x' : v === 'O' ? 'o' : ''}">${v}</button>`).join('');
+  const w = gameWinner(GAME.b);
+  if (w && w !== 'draw') {
+    const line = GAME_WINS.find(([a,c,d]) => GAME.b[a] && GAME.b[a] === GAME.b[c] && GAME.b[a] === GAME.b[d]);
+    if (line) for (const i of line) board.querySelector(`[data-i="${i}"]`)?.classList.add('win');
+  }
+}
+function gameEnd(){
+  GAME.over = true;
+  const w = gameWinner(GAME.b);
+  el('gameStatus').textContent = w === 'X' ? 'you win. KIT tips its hat.'
+    : w === 'O' ? 'KIT wins. it has been practicing.'
+    : w === 'draw' ? 'a draw. KIT is satisfied.' : '';
+}
+function gameMm(b, turn){
+  const w = gameWinner(b);
+  if (w === 'O') return 1;
+  if (w === 'X') return -1;
+  if (w === 'draw') return 0;
+  let best = turn === 'O' ? -2 : 2;
+  for (let i=0;i<9;i++) if (!b[i]) {
+    b[i] = turn;
+    const s = gameMm(b, turn === 'O' ? 'X' : 'O');
+    b[i] = '';
+    best = turn === 'O' ? Math.max(best, s) : Math.min(best, s);
+  }
+  return best;
+}
+function gameKitMove(){
+  if (GAME.over) return;
+  const empty = GAME.b.map((v,i) => v ? -1 : i).filter(i => i >= 0);
+  if (!empty.length) return;
+  let pick;
+  if (Math.random() < 0.18) {
+    pick = empty[Math.floor(Math.random() * empty.length)];
+  } else {
+    let bestScore = -2, best = [];
+    for (const i of empty) {
+      GAME.b[i] = 'O';
+      const s = gameMm(GAME.b, 'X');
+      GAME.b[i] = '';
+      if (s > bestScore) { bestScore = s; best = [i]; }
+      else if (s === bestScore) best.push(i);
+    }
+    pick = best[Math.floor(Math.random() * best.length)];
+  }
+  GAME.b[pick] = 'O';
+  gameRender();
+  const w = gameWinner(GAME.b);
+  if (w) gameEnd();
+  else { GAME.busy = false; el('gameStatus').textContent = 'your move.'; }
+}
+function gameCell(i){
+  if (GAME.over || GAME.busy || GAME.b[i]) return;
+  GAME.b[i] = 'X';
+  gameRender();
+  const w = gameWinner(GAME.b);
+  if (w) { gameEnd(); return; }
+  GAME.busy = true;
+  el('gameStatus').textContent = 'KIT is thinking…';
+  setTimeout(gameKitMove, 480);
+}
+function gameReset(){
+  GAME.b = Array(9).fill(''); GAME.over = false; GAME.busy = false;
+  gameRender();
+  el('gameStatus').textContent = 'you are X. your move.';
+}
+el('gameBtn').addEventListener('click', ()=>{
+  el('game').style.display = 'block';
+  gameReset();
+});
+el('gameClose').addEventListener('click', ()=>{ el('game').style.display = 'none'; });
+el('gameReset').addEventListener('click', gameReset);
+el('gameBoard').addEventListener('click', e=>{
+  const cell = e.target.closest('[data-i]');
+  if (cell) gameCell(Number(cell.dataset.i));
 });
 el('follow').addEventListener('click', ()=>{
   _follow = !_follow;
@@ -1131,6 +1248,84 @@ function buildMesh(b){
   function box(w,h,d,m,x,y,z){ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m); o.position.set(x,y,z); o.castShadow=true; o.receiveShadow=true; g.add(o); return o; }
   function cyl(r1,r2,h,m,x,y,z){ const o=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,10),m); o.position.set(x,y,z); o.castShadow=true; g.add(o); return o; }
 
+  // A real arched bridge: segmented deck, side beams, railings, stone
+  // abutments, piers and end lanterns. The old one was a plank with four
+  // posts, which is why bridges read as toys next to the city blocks.
+  function bridge(scale=1){
+    const L = 8.2 * scale, W = 2.6 * scale, rise = 1.5 * scale, base = .55 * scale;
+    const woodM = new THREE.MeshStandardMaterial({
+      color: 0xffffff, map: PBR.wood.color, normalMap: PBR.wood.normal,
+      roughnessMap: PBR.wood.rough, roughness: .82, metalness: .02});
+    const stoneM = new THREE.MeshStandardMaterial({
+      color: 0xffffff, map: PBR.rock.color, normalMap: PBR.rock.normal,
+      roughnessMap: PBR.rock.rough, roughness: .95});
+    const railM = new THREE.MeshStandardMaterial({color:0x7a5a3c, roughness:.9});
+    const n = 14;
+    const yAt = t => base + Math.sin(Math.PI * t) * rise;
+    const zs = [-W/2 + .10, W/2 - .10];
+    // A bridge needs something to cross. A tapered stream with soft banks
+    // reads better than a rectangle of water sitting on the grass.
+    const sw = new THREE.Shape();
+    const hw = W * .74;
+    sw.moveTo(-L*.62, -hw);
+    sw.bezierCurveTo(-L*.30, -hw*1.16, L*.30, -hw*.90, L*.62, -hw);
+    sw.lineTo(L*.62, hw);
+    sw.bezierCurveTo(L*.30, hw*1.10, -L*.30, hw*.92, -L*.62, hw);
+    sw.closePath();
+    const water = new THREE.Mesh(
+      new THREE.ShapeGeometry(sw),
+      new THREE.MeshStandardMaterial({color:0x356f7a, transparent:true,
+        opacity:.62, roughness:.16, metalness:.12, side:THREE.DoubleSide}));
+    water.rotation.x = -Math.PI/2; water.position.y = .07; water.receiveShadow = true;
+    g.add(water);
+    for (let i=0;i<6;i++){
+      const r = .10 + Math.random()*.14;
+      const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(r,0), stoneM);
+      rock.position.set((Math.random()-.5)*L*.9, .10, (Math.random()-.5)*W*.95);
+      rock.castShadow = true; g.add(rock);
+    }
+    for (let i=0;i<n;i++){
+      const t0=i/n, t1=(i+1)/n;
+      const x0=-L/2+t0*L, x1=-L/2+t1*L;
+      const y0=yAt(t0), y1=yAt(t1);
+      const len=Math.hypot(x1-x0,y1-y0)*1.04;
+      const ang=Math.atan2(y1-y0,x1-x0);
+      const deck=box(len,.22,W,woodM,(x0+x1)/2,(y0+y1)/2+.02,0);
+      deck.rotation.z=ang;
+      for (const z of zs){
+        const beam=box(len,.18,.18,dark,(x0+x1)/2,(y0+y1)/2-.16,z);
+        beam.rotation.z=ang;
+      }
+    }
+    for (let i=0;i<=n;i+=2){
+      const t=i/n, x=-L/2+t*L, y=yAt(t);
+      for (const z of zs) box(.11,1.05,.11,railM,x,y+.55,z);
+    }
+    for (let i=0;i<n;i++){
+      const t0=i/n, t1=(i+1)/n;
+      const x0=-L/2+t0*L, x1=-L/2+t1*L;
+      const y0=yAt(t0), y1=yAt(t1);
+      const len=Math.hypot(x1-x0,y1-y0), ang=Math.atan2(y1-y0,x1-x0);
+      for (const z of zs) for (const h of [1.02,.55]){
+        const rail=box(len*.98,.08,.08,railM,(x0+x1)/2,(y0+y1)/2+h,z);
+        rail.rotation.z=ang;
+      }
+    }
+    for (const x of [-L/2-.42, L/2+.42]) box(1.0,1.15,W+.8,stoneM,x,.36,0);
+    for (const t of [.18,.5,.82]) box(.30,.45,W+.25,stoneM,-L/2+t*L,yAt(t)-.42,0);
+    for (const x of [-L/2-.08, L/2+.08]) for (const z of [-W/2-.04, W/2+.04]){
+      cyl(.07,.09,1.45,dark,x,.95,z);
+      const orb=new THREE.Mesh(new THREE.SphereGeometry(.18,10,8),glow);
+      orb.position.set(x,1.68,z); g.add(orb);
+    }
+    for (const x of [-L/2-.4, L/2+.4]) for (let i=0;i<3;i++){
+      const r=.16+Math.random()*.16;
+      const m=new THREE.Mesh(new THREE.DodecahedronGeometry(r,0),green);
+      m.position.set(x+(Math.random()-.5)*1.1,.55+Math.random()*.2,(Math.random()-.5)*(W+.4));
+      m.castShadow=true; g.add(m);
+    }
+  }
+
   if (kind === 'garden_plot') {
     box(2.6,.25,1.7, new THREE.MeshStandardMaterial({color:0x4a3324, roughness:1}), 0,.12,0);
     for (let i=0;i<3+lvl*2;i++){
@@ -1165,9 +1360,7 @@ function buildMesh(b){
     const roof=new THREE.Mesh(new THREE.ConeGeometry(1.5,1.4,4), new THREE.MeshStandardMaterial({color:0x6b3f2e, roughness:.9})); roof.position.y=4.4+(1.6+lvl*.35); roof.rotation.y=Math.PI/4; roof.castShadow=true; g.add(roof);
     for (let i=0;i<4+lvl;i++) { const w=new THREE.Mesh(new THREE.BoxGeometry(.18,.28,.06), glow); w.position.set(-.7+(i%3)*.7, 1.1+Math.floor(i/3)*.7, 1.11); g.add(w); }
   } else if (kind === 'bridge') {
-    box(4.2,.2,1.5, wood, 0,.75,0);
-    for (const x of [-1.9,1.9]) { box(.12,.7,.12, dark, x,.35,-.65); box(.12,.7,.12, dark, x,.35,.65); box(.12,.1,1.5, dark, x,.95,0); }
-    for (let i=0;i<4;i++) cyl(.05,.05,.9, dark, -1.5+i,1.25,0);
+    bridge(1.15);
   } else if (kind === 'fountain') {
     cyl(1.6,1.8,.45, mat, 0,.22,0);
     const water=new THREE.Mesh(new THREE.CylinderGeometry(1.35,1.35,.06,24), new THREE.MeshStandardMaterial({color:0x6fc3ff, transparent:true, opacity:.75, roughness:.2})); water.position.y=.46; g.add(water);
@@ -1183,7 +1376,7 @@ function buildMesh(b){
     // KIT's own builds used to be human-sized next to 30-unit city blocks.
     // Scale by shape so a tower reads as a tower and an overlook can be seen.
     const shapeScale = {tower: 3.0, spire: 2.6, monument: 2.5, arch: 2.0,
-                        bridge: 1.9, fountain: 1.5, garden: 1.3, tree: 1.7,
+                        bridge: 2.4, fountain: 1.5, garden: 1.3, tree: 1.7,
                         lantern: 1.25, bench: 1.15, ring: 1.5, well: 1.4,
                         gate: 1.8, kiln: 1.5, boat: 1.6, windmill: 2.4,
                         sign: 1.2};
@@ -1214,9 +1407,7 @@ function buildMesh(b){
       pg.scale.setScalar(ps);
       g.add(pg);
     } else if (shape === 'bridge') {
-      box(4.2, .2, 1.5, wood, 0, .75, 0);
-      for (const x of [-1.9, 1.9]) { box(.12, .8, .12, dark, x, .4, -.65); box(.12, .8, .12, dark, x, .4, .65); box(.12, .1, 1.5, dark, x, 1.0, 0); }
-      for (let i=0;i<4;i++) { const s=cyl(.025,.025,1.6, glow, -1.5+i, 1.25, .55); s.rotation.z = .06*(i-1.5); }
+      bridge(gs * .42);
     } else if (shape === 'ring') {
       const ring = new THREE.Mesh(new THREE.TorusGeometry(w, .12, 10, 32), glow);
       ring.position.y = h*.6; ring.rotation.y = .2; g.add(ring);

@@ -107,6 +107,7 @@ ACTIONS = {
     'watch fountain': ('plaza',        {'comfort': 1.2, 'curiosity': .3, 'energy': -.1}, .60),
     'greet visitors': ('plaza',        {'social': 1.4, 'comfort': .2}, .58),
     'go home':        ('home',         {'comfort': 1.2, 'social': .4, 'energy': -.3}, .70),
+    'ride balloon':   ('home',         {'curiosity': 1.2, 'comfort': .8, 'social': .3, 'energy': -.6}, .55),
     'trade':          ('trading_post', {'mastery': 1.2, 'social': .6, 'energy': -.5}, .45),
     'count coins':    ('trading_post', {'mastery': .8, 'comfort': .3}, .35),
     'polish counter': ('trading_post', {'mastery': .5, 'comfort': .4}, .32),
@@ -1005,6 +1006,12 @@ def choose(state):
                 cooldown -= 3.0
             elif age > 20 * 3600:
                 cooldown += 0.4
+        if name == 'ride balloon':
+            age = time.time() - float(state.get('last_balloon_ts') or 0)
+            if age < 8 * 3600:
+                cooldown -= 4.0
+            elif age > 24 * 3600:
+                cooldown += 0.5
         if name == 'define':
             age = time.time() - float(state.get('last_define_ts') or 0)
             if age < 24 * 3600:
@@ -1217,6 +1224,54 @@ def _nav_point(cell):
     return (NAV_MIN + cell[0] * NAV_STEP, NAV_MIN + cell[1] * NAV_STEP)
 
 
+ROAD_RING = 54.0
+ROAD_INNER = 24.0
+ROAD_OUTER = 145.0
+ROAD_HALF = 2.6
+_ROAD_CELLS = None
+
+
+def _seg_dist(px, pz, x1, z1, x2, z2):
+    dx, dz = x2 - x1, z2 - z1
+    L2 = dx * dx + dz * dz
+    if L2 <= 1e-9:
+        return math.hypot(px - x1, pz - z1)
+    t = max(0.0, min(1.0, ((px - x1) * dx + (pz - z1) * dz) / L2))
+    return math.hypot(px - (x1 + t * dx), pz - (z1 + t * dz))
+
+
+def _road_distance(x, z):
+    best = 1e9
+    for i in range(12):
+        a1, a2 = i * math.pi / 6, (i + 1) * math.pi / 6
+        best = min(best, _seg_dist(x, z, math.cos(a1)*ROAD_RING, math.sin(a1)*ROAD_RING,
+                                   math.cos(a2)*ROAD_RING, math.sin(a2)*ROAD_RING))
+    for i in range(8):
+        a = i * math.pi / 4
+        best = min(best, _seg_dist(x, z, math.cos(a)*ROAD_INNER, math.sin(a)*ROAD_INNER,
+                                   math.cos(a)*ROAD_RING, math.sin(a)*ROAD_RING))
+    for a in (0, math.pi/2, math.pi, math.pi*1.5):
+        best = min(best, _seg_dist(x, z, math.cos(a)*ROAD_RING, math.sin(a)*ROAD_RING,
+                                   math.cos(a)*ROAD_OUTER, math.sin(a)*ROAD_OUTER))
+    return best
+
+
+def _nav_road_cells():
+    """Cells on the street grid. A* charges extra to cut across grass."""
+    global _ROAD_CELLS
+    if _ROAD_CELLS is not None:
+        return _ROAD_CELLS
+    span = int((NAV_MAX - NAV_MIN) / NAV_STEP)
+    out = set()
+    for cx in range(span + 1):
+        for cz in range(span + 1):
+            gx, gz = _nav_point((cx, cz))
+            if _road_distance(gx, gz) <= ROAD_HALF + 1.0:
+                out.add((cx, cz))
+    _ROAD_CELLS = out
+    return out
+
+
 def _nav_blocked_cells(builds, obstacles):
     """Rasterize the obstacle circles once; A* then checks a set, not 250 shapes."""
     blocked = set()
@@ -1262,7 +1317,7 @@ def _nav_path(sx, sz, tx, tz, builds, obstacles):
     best = {start: 0.0}
     parent = {}
     seen = 0
-    while openq and seen < 7000:
+    while openq and seen < 24000:
         _f, cost, cur = heapq.heappop(openq)
         seen += 1
         if cur == goal:
@@ -1285,7 +1340,9 @@ def _nav_path(sx, sz, tx, tz, builds, obstacles):
             if dx and dz and not (free((cur[0] + dx, cur[1])) and
                                   free((cur[0], cur[1] + dz))):
                 continue
-            ng = cost + (1.41421356 if dx and dz else 1.0)
+            # streets are cheaper than grass: KIT walks the city, not the lawn
+            _step = 1.0 if nxt in _nav_road_cells() else 2.6
+            ng = cost + _step * (1.41421356 if dx and dz else 1.0)
             if ng < best.get(nxt, 1e18):
                 best[nxt] = ng
                 parent[nxt] = cur
@@ -1961,9 +2018,16 @@ def _check_mail(state):
             if not text:
                 continue
             state['message'] = text[:240]
-            state['thought'] = ('The watcher noticed: %s' if msg.get('kind') == 'nudge'
-                                else 'The trio says: %s') % text[:120]
-            state['recent'].insert(0, 'a reply from the trio')
+            _sender = str(msg.get('from') or 'the trio')
+            if msg.get('kind') == 'nudge':
+                state['thought'] = 'The watcher noticed: %s' % text[:120]
+            elif msg.get('kind') == 'friend' or _sender not in ('vesper', 'trio', 'echo-builder'):
+                state['friend'] = {'name': _sender, 'last_words': text[:220],
+                                   'last_seen': _now()}
+                state['thought'] = '%s says: %s' % (_sender, text[:120])
+            else:
+                state['thought'] = 'The trio says: %s' % text[:120]
+            state['recent'].insert(0, 'a reply from %s' % _sender)
             state['recent'] = state['recent'][:6]
             gift = str(msg.get('gift') or '')
             if gift.startswith('blueprint:'):
@@ -1985,12 +2049,12 @@ def _check_mail(state):
                 # A nudge that only changes a preference is a suggestion, not
                 # a change. Make it a 24-hour hard ban so the next creation
                 # cannot be the same medium again.
-                _now = time.time()
+                _nudge_now = time.time()
                 bans = [b for b in (state.get('avoid_mediums') or [])
                         if isinstance(b, dict)
-                        and float(b.get('until') or 0) > _now
+                        and float(b.get('until') or 0) > _nudge_now
                         and str(b.get('medium')) != avoid]
-                bans.append({'medium': avoid, 'until': _now + 24 * 3600})
+                bans.append({'medium': avoid, 'until': _nudge_now + 24 * 3600})
                 state['avoid_mediums'] = bans[-4:]
                 state['self_observation'] = text[:220]
                 state['recent'].insert(0, 'a nudge: I have been repeating %s' % avoid)
@@ -3366,6 +3430,50 @@ def _build_web_page(state):
     _tg_event(state, 'I made a web page about %s: %s' % (goal[:80], url))
 
 
+def _ride_balloon(state):
+    """A real activity: score, artifact and consequence. Weather can ground it."""
+    now = time.time()
+    if now - float(state.get('last_balloon_ts') or 0) < 8 * 3600:
+        state['thought'] = 'The balloon is still resting; I can wait.'
+        return
+    weather = str(state.get('weather') or 'clear').lower()
+    rough = any(w in weather for w in ('storm', 'rain', 'wind', 'snow', 'fog'))
+    rides = int(state.get('balloon_rides') or 0) + 1
+    cid = 'postcard-%d-%d' % (int(time.time()), len(load_creations()))
+    text = ("A postcard from above Glowveil Hollow, ride %d. The ring road "
+            "looks like a bracelet, the gallery a lit shelf, and my house a "
+            "small warm square in the east meadow. %s"
+            % (rides, 'The wind pushed us sideways; we came down early.' if rough
+               else 'The air was still enough to see the whole hollow.'))
+    creation = {
+        'id': cid, 'medium': 'postcard', 'subject': 'the hollow from the balloon',
+        'title': 'a postcard from above', 'text': text,
+        'color': 0x6fc3ff, 'level': 1, 'at': _now(),
+        'text_engine': 'activity', 'score': {'rides': rides},
+        'consequence': 'rough landing' if rough else 'clear flight',
+        'lineage': {'from_medium': 'postcard', 'from_subject': 'the balloon'},
+    }
+    try:
+        items = load_creations(); items.append(creation); save_creations(items)
+        state['creations'] = [c.get('id') for c in items[-40:]]
+        state['last_creation'] = creation
+    except Exception as e:
+        log('balloon creation failed: %s' % str(e)[:120])
+    state['balloon_rides'] = rides
+    state['last_balloon_ts'] = now
+    state['last_balloon'] = {'rides': rides, 'rough': rough, 'ts': _now()}
+    if rough:
+        state['thought'] = 'The balloon brought me down early. The wind has a say.'
+        state['recent'].insert(0, 'a rough balloon ride over the hollow')
+    else:
+        state['thought'] = 'I saw the whole hollow from the balloon. It is mine to tend.'
+        state['recent'].insert(0, 'a clear balloon ride over the hollow')
+    state['recent'] = state['recent'][:6]
+    _decide(state, 'balloon', 'I rode the balloon and made a postcard from above.')
+    _wonder(state, 'What would the hollow look like from higher up?')
+    _tg_event(state, 'I rode the balloon: %s' % text[:160])
+
+
 def _invent(state):
     """Turn a desire or a wonder into a project KIT names itself."""
     bits = []
@@ -3855,6 +3963,8 @@ def _finish_action(state, name):
         _write_code(state)
     if name == 'build a web page':
         _build_web_page(state)
+    if name == 'ride balloon':
+        _ride_balloon(state)
     if name == 'invent':
         _invent(state)
     if name == 'define':

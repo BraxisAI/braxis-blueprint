@@ -100,6 +100,7 @@
   <div class="dream" id="resDream"></div>
   <div class="dream" id="resCompanion"></div>
   <div class="dream" id="resCompanionTalk"></div>
+  <div class="dream" id="resFriend"></div>
   <div class="dream" id="resFieldNote"></div>
   <div class="dream" id="resJournal"></div>
   <div class="creation" id="resCreation"></div>
@@ -926,6 +927,10 @@ function updateRes(){
   el('resCompanion').textContent = R.companion ? ('companion: ' + (R.companion.name || 'a friend') + ' the ' + String(R.companion.kind || 'companion').replace(/-/g, ' ') + (R.companion.last_words ? ' · "' + R.companion.last_words + '"' : '')) : '';
   const _cd = (R.companion_dialog || []).slice(-1)[0];
   el('resCompanionTalk').textContent = _cd ? ('last talk — KIT: ' + String(_cd.kit || '').slice(0, 90) + ' · Juniper: ' + String(_cd.juniper || '').slice(0, 90)) : '';
+  if (R.friend && R.friend.name) {
+    ensureFriendAvatar(R.friend.name);
+    el('resFriend').textContent = 'friend: ' + R.friend.name + (R.friend.last_words ? ' · "' + String(R.friend.last_words).slice(0,100) + '"' : '');
+  } else { el('resFriend').textContent = ''; }
   el('resFieldNote').textContent = (R.last_field_note && R.last_field_note.topic) ? ('field note: ' + R.last_field_note.topic + ' · ' + String(R.last_field_note.note || '').slice(0, 110)) : '';
   el('resJournal').textContent = R.reflection ? ('diary: ' + R.reflection.slice(0,180)) : '';
   const lc = R.last_creation;
@@ -1155,6 +1160,36 @@ el('share').addEventListener('click', async ()=>{
 });
 
 const _clock = new THREE.Clock();
+let _friendAvatar = null, _friendAvatarName = '';
+function ensureFriendAvatar(name){
+  if (_friendAvatar && _friendAvatarName === name) return;
+  if (_friendAvatar) scene.remove(_friendAvatar);
+  _friendAvatar = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(.65, 12, 9),
+    new THREE.MeshStandardMaterial({color:0x7dd3a8, emissive:0x2f6b55, emissiveIntensity:.5, roughness:.6}));
+  body.position.y = 1.4; _friendAvatar.add(body);
+  const mantle = new THREE.Mesh(new THREE.ConeGeometry(.8, .9, 8),
+    new THREE.MeshStandardMaterial({color:0xb987c9, roughness:.8}));
+  mantle.position.y = .9; _friendAvatar.add(mantle);
+  for (const x of [-.28,.28]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(.08,.10,.7,6),
+      new THREE.MeshStandardMaterial({color:0x3a3f4a, roughness:.9}));
+    leg.position.set(x,.35,0); _friendAvatar.add(leg);
+  }
+  const lb = label(name, '#7dd3a8');
+  lb.position.set(0, 2.7, 0); lb.scale.set(4.4, 1.1, 1); _friendAvatar.add(lb);
+  _friendAvatarName = name;
+  scene.add(_friendAvatar);
+}
+function animateFriend(t){
+  if (!_friendAvatar) return;
+  const a = t * .45 + 1.7;
+  _friendAvatar.position.set(resident.position.x + Math.cos(a)*2.2,
+    surfaceY(resident.position.x + Math.cos(a)*2.2, resident.position.z + Math.sin(a)*2.2) + .1,
+    resident.position.z + Math.sin(a)*2.2);
+  _friendAvatar.rotation.y = a + Math.PI/2;
+}
+
 function animateResident(){
   const dt = Math.min(.05, _clock.getDelta());
   if (!R) return;
@@ -1765,6 +1800,41 @@ setInterval(pollBuilds, 4000); pollBuilds();
 const galleryEl = document.getElementById('gallery');
 const galleryBtn = document.getElementById('galleryBtn');
 function _esc(s){return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// KIT Cinema: a real local screen, not an embed. The estate controls the file,
+// so it loops without CORS/DRM/ToS surprises.
+function buildCinema(){
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({color:0x3a2a20, roughness:.9});
+  const bx=(w,h,d,m,x,y,z)=>{const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;g.add(o);return o;};
+  const screenMat = new THREE.MeshBasicMaterial({color:0x101820});
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(16,9), screenMat);
+  screen.position.set(0, 9, 0); g.add(screen);
+  bx(17.2,10.2,.35, wood, 0,9,-.22);
+  for (const sx of [-8.8,8.8]) bx(.4,10.6,.4, wood, sx,5.2,-.2);
+  bx(17.4,.5,.8, wood, 0,14.2,-.1);
+  const lb = label('KIT CINEMA', '#ffd479');
+  lb.position.set(0,15.6,.2); lb.scale.set(12,1.8,1); g.add(lb);
+  // three rows of seats
+  for (let r=0;r<3;r++) for (let i=0;i<7;i++) {
+    bx(1.5,.6,1.1, wood, -6.0 + i*2.0, .9, 4.5 + r*2.0);
+    bx(1.5,.8,.15, wood, -6.0 + i*2.0, 1.2, 4.0 + r*2.0);
+  }
+  const v = document.createElement('video');
+  v.src = '/media/world/live_20261101T184401Z.mp4';
+  v.crossOrigin = 'anonymous'; v.muted = true; v.loop = true; v.playsInline = true;
+  v.style.position='fixed'; v.style.left='-9999px'; v.style.width='1px';
+  document.body.appendChild(v);
+  v.play().catch(()=>{});
+  try {
+    const tex = new THREE.VideoTexture(v);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    screen.material = new THREE.MeshBasicMaterial({map:tex});
+  } catch(e){}
+  g.position.set(0, surfaceY(0,46), 46); g.rotation.y = Math.PI;
+  scene.add(g);
+}
+buildCinema();
+
 // KIT's art, in the world. A pair of outdoor gallery walls uses the real
 // image creations, so walking the hollow shows what KIT painted.
 let ART_GROUP = null, ART_SLOTS = [];
@@ -2085,6 +2155,7 @@ function updateFireworks(){
   updateFireworks();
   controls.update();
   animateResident();
+  animateFriend(performance.now()/1000);
   ditherPass.uniforms.time.value = performance.now() / 1000;
   if (grassWind) {
     grassWind.uTime.value = performance.now() / 1000;

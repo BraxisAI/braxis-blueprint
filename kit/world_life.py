@@ -1405,6 +1405,9 @@ def _compile_project(state, text):
         shape = 'sign'
     elif any(has(w) for w in ('gate',)):
         shape = 'gate'
+    elif any(has(w) for w in ('pavilion', 'house', 'shelter', 'room',
+                              'stand inside', 'inside', 'hut', 'cabin')):
+        shape = 'pavilion'
     elif any(has(w) for w in ('arch', 'door')):
         shape = 'arch'
     elif any(has(w) for w in ('ring', 'circle', 'halo', 'moon')):
@@ -1467,6 +1470,9 @@ def _shape_for(text, fallback=None):
         return 'sign'
     if any(has(w) for w in ('gate',)):
         return 'gate'
+    if any(has(w) for w in ('pavilion', 'house', 'shelter', 'room',
+                            'stand inside', 'inside', 'hut', 'cabin')):
+        return 'pavilion'
     if any(has(w) for w in ('arch', 'door', 'shrine')):
         return 'arch'
     if any(has(w) for w in ('ring', 'circle', 'halo', 'moon')):
@@ -1492,7 +1498,7 @@ def _verbs_for_shape(shape):
     """Projects advance through a varied set of verbs, not tinker forever."""
     if shape in ('tree', 'garden'):
         return ['garden', 'plant', 'water plants', 'sketch', 'make']
-    if shape in ('bridge', 'tower', 'arch', 'gate'):
+    if shape in ('bridge', 'tower', 'arch', 'gate', 'pavilion'):
         return ['build', 'tinker', 'sketch', 'carve']
     if shape in ('ring', 'spire'):
         return ['build', 'tinker', 'sculpt', 'paint']
@@ -3471,8 +3477,36 @@ def _define_action(state):
 
 
 def _request_build(state):
-    """Ask Echo for code. The request is a queue entry, not a host command."""
+    """Ask Echo for code, unless KIT is asking for a real world structure.
+    Structural goals become projects and get built in the hollow; Echo keeps
+    the code lane for programs. Before this, 'something I can stand inside'
+    came back as a Python walking script."""
     goal = _code_goal(state)
+    low = goal.lower()
+    structural = ('stand inside', 'house', 'shelter', 'pavilion', 'room',
+                  'hut', 'cabin', 'tower', 'bridge', 'gate', 'arch', 'wall',
+                  'roof', 'building', 'inside')
+    if any(w in low for w in structural):
+        p = _compile_project(state, goal)
+        p['source'] = 'request'
+        p['why'] = 'KIT asked for a real thing: %s' % goal[:160]
+        p['target'] = max(3, int(p.get('target') or 3))
+        if not state.get('project'):
+            p.update({'progress': 0, 'started': _now()})
+            state['project'] = p
+            state['recent'].insert(0, 'started building: %s' % p['name'])
+        else:
+            state.setdefault('project_queue', []).append(p)
+            state['recent'].insert(0, 'queued a build: %s' % p['name'])
+        state['recent'] = state['recent'][:6]
+        state['last_build_request_ts'] = time.time()
+        state['last_build_request'] = {'goal': goal, 'kind': 'structure',
+                                       'project': p['name']}
+        state['thought'] = 'I started building %s with my own hands.' % p['name']
+        _decide(state, 'build', 'I started building %s.' % p['name'])
+        _tg_event(state, 'I started building %s for the hollow.' % p['name'][:120])
+        log('BUILD REQUEST structure %s' % p['name'][:80])
+        return
     rid = 'build-%d-%d' % (int(time.time()), random.randint(100, 999))
     req = {'id': rid, 'ts': _now(), 'from': 'kit', 'kind': 'code',
            'goal': goal, 'place': 'workshop'}

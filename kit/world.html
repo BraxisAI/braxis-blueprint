@@ -10,7 +10,10 @@
  #hud .sub{color:#8aa0b8;font-size:12px;margin-top:3px}
  #note{position:fixed;bottom:12px;left:16px;right:16px;z-index:5;color:#5b6370;font-size:11px;text-align:center}
  #load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9;color:#d7b8ff;font-size:14px;background:#0b0e16}
- #res{position:fixed;top:14px;right:16px;z-index:6;width:292px;max-height:calc(100vh - 190px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;background:rgba(11,14,22,.80);border:1px solid rgba(215,184,255,.24);border-radius:14px;padding:13px 14px;backdrop-filter:blur(8px);font-size:12px;line-height:1.35}
+ #res{position:fixed;top:52px;right:16px;z-index:6;width:292px;max-height:calc(100vh - 220px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;background:rgba(11,14,22,.80);border:1px solid rgba(215,184,255,.24);border-radius:14px;padding:13px 14px;backdrop-filter:blur(8px);font-size:12px;line-height:1.35}
+ #resToggle{position:fixed;top:14px;right:16px;z-index:8;background:rgba(11,14,22,.88);border:1px solid rgba(215,184,255,.35);color:#d7b8ff;border-radius:999px;padding:6px 12px;font-size:11px;cursor:pointer;letter-spacing:.08em}
+ #resToggle:hover{background:#1a1f2e;border-color:#d7b8ff}
+ body.res-collapsed #res{display:none}
  #res .mood{color:#d7b8ff;text-transform:uppercase;font-size:9px;letter-spacing:.16em}
  #res h2{margin:2px 0 0;font-size:16px;letter-spacing:.08em}
  #res .act{color:#ffd479;margin:6px 0 2px}
@@ -80,6 +83,7 @@
  @media(max-width:720px){#res{width:210px;padding:9px 10px;font-size:10px;max-height:calc(100vh - 170px)}#res .recent{display:none}#offer button{padding:6px 8px;font-size:10px}#offer{bottom:26px}}
 </style></head>
 <body>
+<button id="resToggle" title="minimize or open KIT's panel" aria-expanded="true">–</button>
 <div id="hud"><h1 id="worldTitle">Glowveil Hollow</h1>
 <div class="sub" id="worldTag">a city that grows one small thing at a time</div></div>
 <div id="load">loading the city…</div>
@@ -988,6 +992,21 @@ el('wideBtn').addEventListener('click', ()=>{
   toast('The whole hollow, for a moment.');
 });
 
+// The resident panel can cover the world, especially on a phone. Keep a
+// fixed toggle so the hollow is always one tap away.
+let _panelMin = false;
+try { _panelMin = localStorage.getItem('kitPanelMin') === '1'; } catch (e) {}
+function applyPanelMin(min) {
+  _panelMin = !!min;
+  document.body.classList.toggle('res-collapsed', _panelMin);
+  const t = el('resToggle');
+  t.textContent = _panelMin ? 'KIT' : '–';
+  t.setAttribute('aria-expanded', String(!_panelMin));
+  try { localStorage.setItem('kitPanelMin', _panelMin ? '1' : '0'); } catch (e) {}
+}
+applyPanelMin(_panelMin);
+el('resToggle').addEventListener('click', () => applyPanelMin(!_panelMin));
+
 // ---------------------------------------------------------------- game ----
 const GAME = {b: Array(9).fill(''), over: false, busy: false};
 const GAME_WINS = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
@@ -1376,7 +1395,7 @@ function buildMesh(b){
     // KIT's own builds used to be human-sized next to 30-unit city blocks.
     // Scale by shape so a tower reads as a tower and an overlook can be seen.
     const shapeScale = {tower: 3.0, spire: 2.6, monument: 2.5, arch: 2.0,
-                        bridge: 2.4, fountain: 1.5, garden: 1.3, tree: 1.7,
+                        bridge: 2.4, pavilion: 2.2, fountain: 1.5, garden: 1.3, tree: 1.7,
                         lantern: 1.25, bench: 1.15, ring: 1.5, well: 1.4,
                         gate: 1.8, kiln: 1.5, boat: 1.6, windmill: 2.4,
                         sign: 1.2};
@@ -1408,6 +1427,24 @@ function buildMesh(b){
       g.add(pg);
     } else if (shape === 'bridge') {
       bridge(gs * .42);
+    } else if (shape === 'pavilion') {
+      const ph = h * .72, pw = w * 1.75;
+      box(pw, .18, pw, mat, 0, .09, 0);
+      for (const [sx,sz] of [[-1,-1],[1,-1],[-1,1],[1,1]]) {
+        box(.20, ph, .20, wood, sx*pw*.38, ph/2, sz*pw*.38);
+      }
+      box(pw*.82, .55, .14, mat, 0, .30, -pw*.42);
+      box(.14, .55, pw*.82, mat, -pw*.42, .30, 0);
+      box(.14, .55, pw*.82, mat, pw*.42, .30, 0);
+      box(pw*.84, .12, .12, wood, 0, ph, 0);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(pw*.62, h*.30, 4),
+        new THREE.MeshStandardMaterial({color:0x6b3f2e, roughness:.9}));
+      roof.position.y = ph + h*.15; roof.rotation.y = Math.PI/4;
+      roof.castShadow = true; g.add(roof);
+      for (const sx of [-1,1]) {
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(.12,8,6), glow);
+        lamp.position.set(sx*pw*.38, ph*.72, pw*.38); g.add(lamp);
+      }
     } else if (shape === 'ring') {
       const ring = new THREE.Mesh(new THREE.TorusGeometry(w, .12, 10, 32), glow);
       ring.position.y = h*.6; ring.rotation.y = .2; g.add(ring);

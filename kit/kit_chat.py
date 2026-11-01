@@ -228,10 +228,11 @@ def _reply(text, st):
         'capabilities': ('You can browse the internet with your browse action '
                          '(Wikipedia/Hacker News/GitHub/arXiv), watch a video through '
                          'the watch lane, read your field notes, make things and talk '
-                         'to Juniper. You cannot execute payments or arbitrary code.'),
+                         "to Juniper. You have a house in the east meadow (KIT's House); you can go home. You cannot execute payments or arbitrary code."),
         'product': ("If he asks what you can sell or what to take home: KIT's notebook, "
                     "Notes from Glowveil Hollow, is $7 and downloads instantly at "
                     "https://braxisai.com/builds/kit-notebook/."),
+        'home': st.get('home'),
         'visitor_impressions': list(
             (st.get('visitor_impressions') or {}).values())[-4:],
         'wishes': (lambda wl: [w for w in (wl.get('wishes') or [])

@@ -605,7 +605,7 @@ prop(P+'grass_bermuda_01/main.gltf', 40, 20, 1.6); prop(P+'flower_ursinia/main.g
 prop(P+'flower_gazania/main.gltf', -30, -12, 1.2); prop(P+'crystalline_iceplant/main.gltf', 55, 8, 1.3);
 prop(P+'gate_latch_01/main.gltf', 0, -30, 1.6);
 // forest — procedural pines (guaranteed standing + green)
-const HOME_CLEAR = {x:-30, z:30, r:26};
+const HOME_CLEAR = {x:110, z:-90, r:32};
 function pine(x, z, h, col){
   if (Math.hypot(x-HOME_CLEAR.x, z-HOME_CLEAR.z) < HOME_CLEAR.r) return;
   const g0 = 5.7;
@@ -1598,8 +1598,11 @@ function buildMesh(b){
       const roof=new THREE.Mesh(new THREE.ConeGeometry(w*1.1,1.3,4), new THREE.MeshStandardMaterial({color:0x6b3f2e})); roof.position.y=h+.6; roof.rotation.y=Math.PI/4; g.add(roof);
       for (let i=0;i<3+lvl;i++) { const win=new THREE.Mesh(new THREE.BoxGeometry(.15,.24,.06), glow); win.position.set(-.5+(i%3)*.5, .8+Math.floor(i/3)*.7, w*.71); g.add(win); }
     } else if (shape === 'bench') {
-      box(2.2,.16,.62, wood, 0,.85,0); box(2.2,.5,.1, wood, 0,1.15,-.26);
-      for (const x of [-.85,.85]) { box(.12,.85,.12, dark, x,.42,-.2); box(.12,.85,.12, dark, x,.42,.2); }
+      for (let i=0;i<4;i++) box(2.2,.10,.14, wood, 0,.82+i*.02,-.24+i*.17);
+      for (let i=0;i<3;i++) { const b=box(2.2,.12,.10, wood, 0,1.05+i*.22,-.32); b.rotation.x=-.12; }
+      for (const x of [-.92,.92]) { box(.14,.86,.14, dark, x,.42,-.24); box(.14,.86,.14, dark, x,.42,.22);
+        box(.14,.12,.7, dark, x,.92,.02); }
+      for (const x of [-.65,.65]) cyl(.06,.06,1.55, dark, x,.78,-.38);
     } else if (shape === 'fountain') {
       cyl(1.5,1.7,.4, mat, 0,.2,0);
       const water=new THREE.Mesh(new THREE.CylinderGeometry(1.25,1.25,.06,20), new THREE.MeshStandardMaterial({color:0x6fc3ff, transparent:true, opacity:.75})); water.position.y=.43; g.add(water);
@@ -1726,29 +1729,60 @@ function _esc(s){return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&am
 // KIT's art, in the world. A pair of outdoor gallery walls uses the real
 // image creations, so walking the hollow shows what KIT painted.
 let ART_GROUP = null, ART_SLOTS = [];
+let POEM_BOARD = null;
+function poemTexture(text){
+  const c=document.createElement('canvas'); c.width=1024; c.height=768;
+  const x=c.getContext('2d');
+  x.fillStyle='#17130f'; x.fillRect(0,0,1024,768);
+  x.strokeStyle='#8a623f'; x.lineWidth=10; x.strokeRect(12,12,1000,744);
+  x.fillStyle='#ffd479'; x.font='700 30px Georgia,serif'; x.textAlign='center';
+  x.fillText("KIT'S POEMS",512,62);
+  x.fillStyle='#e6e8ee'; x.font='26px Georgia,serif'; x.textAlign='left';
+  const words=String(text||'').split(/\s+/); let line='', y=120;
+  for(const w of words){
+    const t=(line+' '+w).trim();
+    if(x.measureText(t).width>900){ x.fillText(line,58,y); y+=38; line=w; }
+    else line=t;
+    if(y>720) break;
+  }
+  if(line) x.fillText(line,58,y);
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
 function buildArtWalls(){
   if (ART_GROUP) return;
   ART_GROUP = new THREE.Group();
   const frameMat = new THREE.MeshStandardMaterial({color:0x4a3324, roughness:.9});
   const wallMat = new THREE.MeshStandardMaterial({color:0x8b8375, roughness:.95});
-  for (const [wx,wz,ry] of [[18,18,-Math.PI/4],[-18,18,Math.PI/4]]) {
+  for (const [wx,wz,ry] of [[22,22,-Math.PI/4],[-22,22,Math.PI/4]]) {
     const g = new THREE.Group();
     const y = surfaceY(wx,wz);
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(14, 5, .35), wallMat);
-    wall.position.set(0, 2.5, 0); wall.castShadow = true; wall.receiveShadow = true; g.add(wall);
-    for (let i=0;i<3;i++) {
-      const fr = new THREE.Mesh(new THREE.BoxGeometry(3.8, 3.2, .18), frameMat);
-      fr.position.set(-4.5 + i*4.5, 2.7, .25); g.add(fr);
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(20, 6.2, .35), wallMat);
+    wall.position.set(0, 3.1, 0); wall.castShadow = true; wall.receiveShadow = true; g.add(wall);
+    for (let i=0;i<4;i++) {
+      const fr = new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.0, .18), frameMat);
+      fr.position.set(-6.9 + i*4.6, 3.3, .25); g.add(fr);
       const mat = new THREE.MeshBasicMaterial({color:0x1a1a1a});
-      const pic = new THREE.Mesh(new THREE.PlaneGeometry(3.35, 2.75), mat);
-      pic.position.set(-4.5 + i*4.5, 2.7, .36); g.add(pic);
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(3.75, 3.55), mat);
+      pic.position.set(-6.9 + i*4.6, 3.3, .36); g.add(pic);
       ART_SLOTS.push(pic);
     }
     const lb = label("KIT'S OUTDOOR GALLERY", '#ffd479');
-    lb.position.set(0, 5.6, .4); lb.scale.set(12, 1.8, 1); g.add(lb);
+    lb.position.set(0, 6.8, .4); lb.scale.set(15, 1.9, 1); g.add(lb);
     g.position.set(wx, y, wz); g.rotation.y = ry;
     ART_GROUP.add(g);
   }
+  // a poem wall beside KIT's house
+  const pg = new THREE.Group();
+  const px = HOME_CLEAR.x + 13, pz = HOME_CLEAR.z + 7;
+  const board = new THREE.Mesh(new THREE.BoxGeometry(7, 5.6, .35), wallMat);
+  board.position.set(0, 2.8, 0); pg.add(board);
+  POEM_BOARD = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 5.0),
+    new THREE.MeshBasicMaterial({color:0x17130f}));
+  POEM_BOARD.position.set(0, 2.8, .22); pg.add(POEM_BOARD);
+  const plb = label("KIT'S POEMS", '#ffd479');
+  plb.position.set(0, 6.0, .35); plb.scale.set(9, 1.6, 1); pg.add(plb);
+  pg.position.set(px, surfaceY(px,pz), pz); pg.rotation.y = -Math.PI/3;
+  ART_GROUP.add(pg);
   scene.add(ART_GROUP);
 }
 const _artLoader = new THREE.TextureLoader();
@@ -1764,6 +1798,12 @@ function updateArtWalls(list){
       slot.material.needsUpdate = true; slot.visible = true;
     }, undefined, () => { slot.visible = false; });
   });
+  const poem = (list || []).filter(c => c.text && c.medium !== 'code').slice(-1)[0];
+  if (POEM_BOARD && poem) {
+    const tex = poemTexture(poem.text);
+    POEM_BOARD.material.map = tex; POEM_BOARD.material.color.set(0xffffff);
+    POEM_BOARD.material.needsUpdate = true;
+  }
 }
 
 async function pollCreations(){

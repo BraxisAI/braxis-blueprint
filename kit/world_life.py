@@ -78,6 +78,7 @@ DRIVES = ['energy', 'curiosity', 'social', 'comfort', 'mastery']
 
 LOCS = {
     'plaza':        {'x': 0,   'z': 0,   'label': 'the plaza'},
+    'home':         {'x': 110, 'z': -90, 'label': "KIT's House"},
     'trading_post': {'x': 24,  'z': 0,   'label': "Vesper's Trading Post"},
     'ledger':       {'x': -24, 'z': 0,   'label': "MAYA's Ledger"},
     'observatory':  {'x': 0,   'z': 24,  'label': "Echo's Observatory"},
@@ -105,6 +106,7 @@ ACTIONS = {
     'sunbathe':       ('plaza',        {'energy': 1.0, 'comfort': .8}, .55),
     'watch fountain': ('plaza',        {'comfort': 1.2, 'curiosity': .3, 'energy': -.1}, .60),
     'greet visitors': ('plaza',        {'social': 1.4, 'comfort': .2}, .58),
+    'go home':        ('home',         {'comfort': 1.2, 'social': .4, 'energy': -.3}, .70),
     'trade':          ('trading_post', {'mastery': 1.2, 'social': .6, 'energy': -.5}, .45),
     'count coins':    ('trading_post', {'mastery': .8, 'comfort': .3}, .35),
     'polish counter': ('trading_post', {'mastery': .5, 'comfort': .4}, .32),
@@ -3179,13 +3181,18 @@ def _code_goal(state):
     fn = state.get('last_field_note') or {}
     bits.extend([str(fn.get('question') or ''), str(fn.get('topic') or '')])
     bits.extend([str(i.get('text') or '') for i in (state.get('interests') or [])[:3]])
+    last = str(state.get('last_code_goal') or '').strip()
+    fallback = ''
     for b in bits:
         b = _clean(b).strip(' .!?')
         b = re.sub(r'^(I want to|I am wondering|I wonder|I want)\s+', '',
                    b, flags=re.I).strip(' .!?')
         if len(b) >= 8 and _public_safe(b):
-            return b[:110]
-    return 'a small pattern in the garden'
+            if b != last:
+                state['last_code_goal'] = b[:110]
+                return b[:110]
+            fallback = fallback or b
+    return fallback[:110] or 'a small pattern in the garden'
 
 
 def _clean_code(raw):
@@ -3369,7 +3376,10 @@ def _invent(state):
     if state.get('interests'):
         bits.append(str((state['interests'][0] or {}).get('text') or ''))
     bits = [_clean(x).strip(' .!?') for x in bits if _clean(x).strip(' .!?')]
-    seed = (bits[0] if bits else 'the garden')[:80]
+    seed = (bits[0] if bits else 'the garden')
+    seed = re.split(r'[,;:.]|\s+not\s+|\s+because\s+', seed)[0].strip()[:60]
+    if seed.lower().startswith('make '):
+        seed = seed[5:].strip()
     forms = [
         'a thing that remembers %s' % seed,
         'a place for %s' % seed,
@@ -3379,6 +3389,10 @@ def _invent(state):
     ]
     text = random.choice(forms)
     p = _compile_project(state, text)
+    used = [str((state.get('project') or {}).get('name') or '')] + [
+        str(x.get('name') or '') for x in (state.get('project_queue') or [])]
+    if p.get('name') in used:
+        return
     p['source'] = 'invent'
     p['why'] = text
     p['target'] = 2 + random.randint(0, 2)
@@ -3927,7 +3941,11 @@ def _apply_visits(state):
         # Count real visitors by IP hash, not by offerings. Before this, a
         # visitor who only loaded the world and read it was invisible.
         ip = str(it.get('ip') or '')
-        if ip:
+        ua = str(it.get('ua') or '').lower()
+        _machine = any(x in ua for x in ('headless', 'braxis-verify',
+                                        'braxis-change-monitor', 'bot',
+                                        'crawler', 'spider'))
+        if ip and not _machine:
             key = hashlib.sha1(ip.encode()).hexdigest()[:8]
             vips = state.setdefault('visit_ips', {})
             rec = vips.setdefault(key, {'first': _now(), 'last': _now(), 'count': 0})
@@ -4836,6 +4854,7 @@ class Handler(BaseHTTPRequestHandler):
                     'duration': data.get('duration') or 0,
                     'path': str(data.get('path') or '')[:80],
                     'ip': _request_ip(self),
+                    'ua': str(self.headers.get('User-Agent') or '')[:160],
                 })
             self._send(200, {'ok': True})
             return

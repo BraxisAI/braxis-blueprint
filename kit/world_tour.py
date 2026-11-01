@@ -96,6 +96,50 @@ def _tts(text, out_mp3):
     return None
 
 
+def _publish(out, state, a):
+    try:
+        from shared.visual_critic import critique_video
+        vc = critique_video(out, context=(
+            "A horizontal narrated tour of Glowveil Hollow, a stylized 3D world. "
+            "Show the house, pool, grounds and surrounding hollow. KIT the white "
+            "robot or Juniper may appear. Reject UI overlays, loading screens, "
+            "black bars, or a fully static clip."))
+        print("critic", vc.get("score"), vc.get("ok"), vc.get("notes"))
+        if not vc.get("ok"):
+            print("rejected; not uploaded"); return 1
+    except Exception as e:
+        print("critic unavailable; refusing:", str(e)[:160]); return 1
+    world = state.get("world_name") or "Glowveil Hollow"
+    day = _day(state)
+    title = a.title or ("Glowveil Hollow — a narrated walk (day %d)" % day)
+    desc = ("A narrated tour of %s, the live 3D world of KIT, an autonomous "
+            "AI resident, and Juniper the moss-cat. Narration is read from "
+            "KIT's live state. World: %s  |  KIT's notebook: "
+            "https://braxisai.com/builds/kit-notebook/  |  Dashboard: "
+            "https://braxisai.com/kit/" % (world, WORLD))
+    try:
+        from weapons.youtube_upload import upload
+        vid = upload(out, title[:100], desc, shorts=False)
+    except Exception as e:
+        print("upload failed:", str(e)[:300]); return 1
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+    try:
+        con = sqlite3.connect(DB, timeout=30)
+        con.execute("PRAGMA busy_timeout=30000")
+        con.execute(
+            "INSERT INTO pending_content (client_uuid, weapon, platform, content_type, "
+            "title, body, image_url, hashtags, scheduled_at, status, created_at, "
+            "published_at, published_url, posted_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("tour-" + str(int(time.time())), "kit_world", "youtube", "video",
+             title[:110], desc[:900], PUBLIC + os.path.basename(out),
+             "#AI #3D #autonomous", now, "published", now, now, vid, "world_tour"))
+        con.commit(); con.close()
+    except Exception as e:
+        print("row write failed:", str(e)[:160])
+    print("UPLOADED", vid, "https://youtu.be/" + vid)
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--clips", type=int, default=8)
@@ -109,6 +153,8 @@ def main():
                     help="slow-motion factor for the source clips")
     ap.add_argument("--seconds", type=int, default=90,
                     help="capture length when --capture is set")
+    ap.add_argument("--copy-video", action="store_true",
+                    help="keep the source video stream (single source) and only add audio")
     ap.add_argument("--title", default="")
     a = ap.parse_args()
     if a.sources:
@@ -156,6 +202,24 @@ def main():
         cmd += ["-stream_loop", "-1", "-t", "%.3f" % max(1.0, total), "-i", music[-1]]
     voice_idx = len(clips) + (1 if music else 0)
     cmd += ["-i", voice]
+    if a.copy_video and len(clips) == 1:
+        if music:
+            afc = ("[1:a]volume=0.16[bg];[2:a]volume=1.0[nar];"
+                   "[bg][nar]amix=inputs=2:duration=first:dropout_transition=2[a]")
+            cmd += ["-filter_complex", afc, "-map", "0:v", "-map", "[a]",
+                    "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+                    "-shortest", "-movflags", "+faststart", out]
+        else:
+            cmd += ["-map", "0:v", "-map", "1:a", "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "160k", "-shortest",
+                    "-movflags", "+faststart", out]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if r.returncode != 0:
+            print("ffmpeg failed:", r.stderr[-1200:]); return 1
+        print("tour", out, round(os.path.getsize(out) / 1e6, 1), "MB", round(_duration(out), 1), "s")
+        if a.dry:
+            print("dry; not uploaded"); return 0
+        return _publish(out, state, a)
     fc = []
     for i in range(len(clips)):
         # Vertical world clips would lose KIT when cropped to 16:9. Keep the
@@ -184,48 +248,7 @@ def main():
     print("tour", out, round(os.path.getsize(out) / 1e6, 1), "MB", round(_duration(out), 1), "s")
     if a.dry:
         print("dry; not uploaded"); return 0
-    try:
-        from shared.visual_critic import critique_video
-        vc = critique_video(out, context=(
-            "A horizontal narrated tour of Glowveil Hollow, a stylized 3D world. "
-            "KIT the white robot should be visible; Juniper the moss-cat may "
-            "appear. The world and its buildings should be visible. Reject UI "
-            "overlays, loading screens, black bars, or a static clip."))
-        print("critic", vc.get("score"), vc.get("ok"), vc.get("notes"))
-        if not vc.get("ok"):
-            print("rejected; not uploaded"); return 1
-    except Exception as e:
-        print("critic unavailable; refusing:", str(e)[:160]); return 1
-    world = state.get("world_name") or "Glowveil Hollow"
-    day = _day(state)
-    title = a.title or ("Glowveil Hollow — a narrated walk (day %d)" % day)
-    desc = ("A narrated tour of %s, the live 3D world of KIT, an autonomous "
-            "AI resident, and Juniper the moss-cat. Narration is read from "
-            "KIT's live state. World: %s  |  KIT's notebook: "
-            "https://braxisai.com/builds/kit-notebook/  |  Dashboard: "
-            "https://braxisai.com/kit/" % (world, WORLD))
-    try:
-        from weapons.youtube_upload import upload
-        vid = upload(out, title[:100], desc, shorts=False)
-    except Exception as e:
-        print("upload failed:", str(e)[:300]); return 1
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-    try:
-        con = sqlite3.connect(DB, timeout=30)
-        con.execute("PRAGMA busy_timeout=30000")
-        con.execute(
-            "INSERT INTO pending_content (client_uuid, weapon, platform, content_type, "
-            "title, body, image_url, hashtags, scheduled_at, status, created_at, "
-            "published_at, published_url, posted_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            ("tour-" + str(int(time.time())), "kit_world", "youtube", "video",
-             title[:110], desc[:900], PUBLIC + os.path.basename(out),
-             "#AI #3D #autonomous", now, "published", now, now, vid, "world_tour"))
-        con.commit(); con.close()
-    except Exception as e:
-        print("row write failed:", str(e)[:160])
-    print("UPLOADED", vid, "https://youtu.be/" + vid)
-    return 0
-
+    return _publish(out, state, a)
 
 if __name__ == "__main__":
     raise SystemExit(main())

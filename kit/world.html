@@ -1259,9 +1259,15 @@ function animateResident(){
   } else {
     companionGroup.visible = false;
   }
+  if (_videoMode && R.home && Number.isFinite(+R.home.x)) {
+    // Frame the tour at KIT's own house, on the porch side, not inside the
+    // walls and not among the city towers.
+    const hx = +R.home.x, hz = +R.home.z + 8.0;
+    resident.position.set(hx, surfaceY(hx, hz), hz);
+  }
   if (_follow) {
     const chest = resident.position.clone().add(new THREE.Vector3(0, 1.6, 0));
-    const _followOff = _videoMode ? new THREE.Vector3(18, 7, 18)
+    const _followOff = _videoMode ? new THREE.Vector3(0, 26, 48)
                                   : new THREE.Vector3(13, 9, 13);
     if (!_snapped) {
       camera.position.copy(resident.position).add(_followOff);
@@ -1558,14 +1564,21 @@ function buildMesh(b){
       box(fw, wh, .35, mat, 0, .4 + wh/2, -fd/2);
       box(.35, wh, fd, mat, -fw/2, .4 + wh/2, 0);
       box(.35, wh, fd, mat, fw/2, .4 + wh/2, 0);
-      // roof: a real gable, steep enough to see the walls from the ground
+      // roof: a solid gable prism, not two detached slabs. The old slabs
+      // read as a floating roof in the tour critic (2/10).
       const rh = h * .30;
-      const roofLen = Math.hypot(fw/2, rh);
-      for (const sgn of [-1, 1]) {
-        const r = box(roofLen, .30, fd + .45, roofM, sgn*fw*.25,
-                      .4 + wh + rh*.5, 0);
-        r.rotation.z = sgn * Math.atan2(rh, fw/2);
-      }
+      const hw = fw/2 + .45, hd = fd/2 + .35, top = .4 + wh;
+      const rv = new Float32Array([
+        -hw, top, -hd,   hw, top, -hd,   0, top+rh, -hd,
+        -hw, top,  hd,   hw, top,  hd,   0, top+rh,  hd
+      ]);
+      const ri = [0,1,2, 3,5,4, 0,2,5, 0,5,3, 1,4,5, 1,5,2];
+      const rg = new THREE.BufferGeometry();
+      rg.setAttribute('position', new THREE.BufferAttribute(rv, 3));
+      rg.setIndex(ri); rg.computeVertexNormals();
+      const roof = new THREE.Mesh(rg, new THREE.MeshStandardMaterial({
+        color:0x6b3f2e, roughness:.9, side:THREE.DoubleSide}));
+      roof.castShadow = true; roof.receiveShadow = true; g.add(roof);
       // ridge beam
       box(.35, .35, fd + 1.3, dark, 0, .4 + wh + rh, 0);
       // windows + door frame
@@ -2061,7 +2074,7 @@ if (_videoMode) {
   for (const l of LABELS) l.visible = false;
   _follow = true;
   controls.autoRotate = true;
-  controls.autoRotateSpeed = 1.1;
+  controls.autoRotateSpeed = .12;
   controls.target.set(resident.position.x, resident.position.y + 2, resident.position.z);
   camera.position.set(resident.position.x + 22, resident.position.y + 12, resident.position.z + 22);
   _ring.visible = false;

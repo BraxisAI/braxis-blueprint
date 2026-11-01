@@ -121,6 +121,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
@@ -135,12 +136,27 @@ document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 // gradient sky
-const cv = document.createElement('canvas'); cv.width = 2; cv.height = 256;
-const cx = cv.getContext('2d'); const gr = cx.createLinearGradient(0,0,0,256);
+const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 512;
+const cx = cv.getContext('2d'); const gr = cx.createLinearGradient(0,0,0,512);
 gr.addColorStop(0,'#2f5d86'); gr.addColorStop(.48,'#6d97b2'); gr.addColorStop(.78,'#9fb0ac');
 gr.addColorStop(.92,'#e0a46d'); gr.addColorStop(1,'#f6c58e');
-cx.fillStyle = gr; cx.fillRect(0,0,2,256);
-const skyTex = new THREE.CanvasTexture(cv);
+cx.fillStyle = gr; cx.fillRect(0,0,1024,512);
+// a soft low sun and a few cloud banks, not a flat gradient
+const sunGlow = cx.createRadialGradient(760,330,8,760,330,170);
+sunGlow.addColorStop(0,'rgba(255,236,190,.75)'); sunGlow.addColorStop(.35,'rgba(255,205,145,.22)');
+sunGlow.addColorStop(1,'rgba(255,205,145,0)');
+cx.fillStyle = sunGlow; cx.fillRect(0,0,1024,512);
+cx.filter = 'blur(14px)';
+for (let i=0;i<16;i++){
+  const x = 60 + Math.random()*920, y = 150 + Math.random()*170;
+  const w = 90 + Math.random()*180, h = 12 + Math.random()*26;
+  const cg = cx.createRadialGradient(x,y,2,x,y,w);
+  cg.addColorStop(0,'rgba(240,245,247,.20)'); cg.addColorStop(.6,'rgba(240,245,247,.07)');
+  cg.addColorStop(1,'rgba(240,245,247,0)');
+  cx.fillStyle = cg; cx.beginPath(); cx.ellipse(x,y,w,h,0,0,Math.PI*2); cx.fill();
+}
+cx.filter = 'none';
+const skyTex = new THREE.CanvasTexture(cv); skyTex.colorSpace = THREE.SRGBColorSpace;
 scene.background = skyTex;
 scene.fog = new THREE.Fog(0x9aa8aa, 80, 310);
 
@@ -1431,6 +1447,13 @@ try {
 } catch(e) { console.warn('N8AO unavailable, using plain render', e); }
 if (!n8ao) composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.62, 0.86));
+let bokehPass = null;
+if (!new URLSearchParams(location.search).get('quality')) {
+  try {
+    bokehPass = new BokehPass(scene, camera, {focus: 55, aperture: 0.00002, maxblur: 0.0025});
+    composer.addPass(bokehPass);
+  } catch(e) { console.warn('DOF unavailable', e); }
+}
 const DitherShader = {
   uniforms: {
     tDiffuse: {value: null},
@@ -1475,6 +1498,11 @@ addEventListener('resize', () => {
   if (grassWind) {
     grassWind.uTime.value = performance.now() / 1000;
     grassWind.uKit.value.copy(resident.position);
+  }
+  if (bokehPass) {
+    const focus = camera.position.distanceTo(controls.target);
+    bokehPass.uniforms.focus.value = Math.max(12, Math.min(90, focus));
+    bokehPass.enabled = focus < 145;
   }
   composer.render();
 })();

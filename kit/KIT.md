@@ -120,6 +120,9 @@ still missing.
 - **PBR + wind:** ambientCG CC0 maps drive grass, stone, rock and wood. The
   1,400 instanced grass blades sway in the wind and bend away from KIT's
   position; the procedural maps remain the fallback.
+- **Sky + DOF:** a cloud/sun-glow sky canvas; a subtle Bokeh pass focuses on
+  the current target and auto-disables when the camera pulls wide, so the
+  overview stays readable.
 ## Companion and dashboard
 
 - **Juniper, the first companion.** KIT has a `befriend` action. On

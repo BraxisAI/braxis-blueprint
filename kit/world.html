@@ -1265,6 +1265,21 @@ function animateResident(){
     const hx = +R.home.x, hz = +R.home.z + 8.0;
     resident.position.set(hx, surfaceY(hx, hz), hz);
   }
+  if (_videoMode) {
+    // A limited south-side orbit: motion for the critic, but never behind the
+    // house where the walls hide KIT.
+    const _t = performance.now() / 1000;
+    const _a = Math.sin(_t * .10) * .55;
+    const _r = 48, _y = 26;
+    camera.position.set(
+      resident.position.x + Math.sin(_a) * _r,
+      resident.position.y + _y,
+      resident.position.z + Math.cos(_a) * _r
+    );
+    controls.target.set(resident.position.x, resident.position.y + 1.6,
+                        resident.position.z);
+    camera.lookAt(controls.target);
+  }
   if (_follow) {
     const chest = resident.position.clone().add(new THREE.Vector3(0, 1.6, 0));
     const _followOff = _videoMode ? new THREE.Vector3(0, 26, 48)

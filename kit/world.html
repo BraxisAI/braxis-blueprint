@@ -1455,7 +1455,7 @@ function buildMesh(b){
         lamp.position.set(sx*pw*.38, ph*.72, pw*.38); g.add(lamp);
       }
     } else if (shape === 'homestead') {
-      const fw = w * 2.6, fd = w * 2.0, wh = h * .64;
+      const fw = w * 2.0, fd = w * 1.6, wh = h * .74;
       const stone = new THREE.MeshStandardMaterial({color:0x9b9588, roughness:.95});
       const roofM = new THREE.MeshStandardMaterial({color:0x6b3f2e, roughness:.9});
       const glass = new THREE.MeshStandardMaterial({color:0xffd479, emissive:0xffb057, emissiveIntensity:.55, roughness:.25});
@@ -1473,10 +1473,10 @@ function buildMesh(b){
       box(.35, wh, fd, mat, -fw/2, .4 + wh/2, 0);
       box(.35, wh, fd, mat, fw/2, .4 + wh/2, 0);
       // roof: a real gable, steep enough to see the walls from the ground
-      const rh = h * .36;
+      const rh = h * .30;
       const roofLen = Math.hypot(fw/2, rh);
       for (const sgn of [-1, 1]) {
-        const r = box(roofLen, .30, fd + 1.2, roofM, sgn*fw*.25,
+        const r = box(roofLen, .30, fd + .45, roofM, sgn*fw*.25,
                       .4 + wh + rh*.5, 0);
         r.rotation.z = sgn * Math.atan2(rh, fw/2);
       }
@@ -1493,6 +1493,19 @@ function buildMesh(b){
       box(fw*.78, .22, 3.4, roofM, 0, .42 + wh*.60, fd/2 + 1.8);
       // chimney
       box(1.1, h*.34, 1.1, stone, fw*.30, .4 + wh + h*.12, -fd*.18);
+      // interior: rug, table, chairs, bed, fireplace, bookshelf
+      const rug = new THREE.Mesh(new THREE.PlaneGeometry(fw*.42, fd*.36),
+        new THREE.MeshStandardMaterial({color:0x6b3f2e, roughness:1}));
+      rug.rotation.x = -Math.PI/2; rug.position.set(0, .52, 0); g.add(rug);
+      box(2.6, .16, 1.6, wood, 0, 1.25, 0);
+      for (const [tx,tz] of [[-1.0,-.55],[1.0,-.55],[-1.0,.55],[1.0,.55]]) box(.12,.85,.12, dark, tx,.82,tz);
+      for (const sx of [-1.7,1.7]) { box(.9,.5,.9, wood, sx,.65,0); box(.9,.7,.12, wood, sx,1.05,-.42); }
+      box(3.0,.45,4.6, wood, -fw*.28,.65,-fd*.30);
+      box(3.0,.18,1.2, glow, -fw*.28,1.0,-fd*.62);
+      box(2.0,1.8,.7, stone, fw*.30,.9,-fd*.30);
+      const fire = new THREE.Mesh(new THREE.SphereGeometry(.35,10,8), glow);
+      fire.position.set(fw*.30,.75,-fd*.30+.38); g.add(fire);
+      for (let i=0;i<3;i++) box(2.2,.12,.5, wood, fw*.30,1.0+i*.55,-fd*.34);
       // pool + stone rim
       const poolX = -fw*.78, poolZ = fd*.05;
       box(8.4, .30, 5.4, stone, poolX, .16, poolZ);

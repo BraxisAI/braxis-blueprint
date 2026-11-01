@@ -4978,7 +4978,7 @@ class Handler(BaseHTTPRequestHandler):
                 log('WORLD CHAT LLM failed: %s' % str(e)[:120])
             if not reply:
                 reply = 'I heard you. I am still here, between the lanterns and the garden.'
-            reply = _clean(reply)[:600]
+            reply = _clean(reply).replace('*', '').strip()[:600]
             with LOCK:
                 st = load_state()
                 st['last_world_chat'] = {'ts': _now(), 'text': text, 'reply': reply}

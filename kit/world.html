@@ -1261,14 +1261,20 @@ function animateResident(){
   }
   if (_follow) {
     const chest = resident.position.clone().add(new THREE.Vector3(0, 1.6, 0));
+    const _followOff = _videoMode ? new THREE.Vector3(18, 7, 18)
+                                  : new THREE.Vector3(13, 9, 13);
     if (!_snapped) {
-      camera.position.copy(resident.position).add(new THREE.Vector3(13, 9, 13));
+      camera.position.copy(resident.position).add(_followOff);
       controls.target.copy(chest);
       _snapped = true;
     }
     controls.target.lerp(chest, .08);
-    const desired = resident.position.clone().add(new THREE.Vector3(13, 9, 13));
-    camera.position.lerp(desired, .035);
+    // In video mode let OrbitControls' autoRotate move the camera; lerping
+    // back to a fixed offset every frame froze the shot (critic: "minimal motion").
+    if (!_videoMode) {
+      const desired = resident.position.clone().add(_followOff);
+      camera.position.lerp(desired, .035);
+    }
   }
   _ring.scale.setScalar(1 + Math.sin(t * 1.4) * .08);
   animateBuilds(dt);

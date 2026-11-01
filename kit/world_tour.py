@@ -103,11 +103,27 @@ def main():
     ap.add_argument("--nomusic", action="store_true")
     ap.add_argument("--capture", action="store_true",
                     help="record a fresh 200s horizontal walk instead of using clips")
+    ap.add_argument("--sources", default="",
+                    help="comma-separated clip paths or filenames to use")
+    ap.add_argument("--slow", type=float, default=1.0,
+                    help="slow-motion factor for the source clips")
+    ap.add_argument("--seconds", type=int, default=90,
+                    help="capture length when --capture is set")
     ap.add_argument("--title", default="")
     a = ap.parse_args()
-    if a.capture:
+    if a.sources:
+        clips = []
+        for src in a.sources.split(","):
+            src = src.strip()
+            if not src:
+                continue
+            p = src if os.path.isabs(src) else os.path.join(MEDIA, os.path.basename(src))
+            if not os.path.exists(p):
+                print("missing source:", p); return 1
+            clips.append(p)
+    elif a.capture:
         from world_longform import capture
-        mp4 = capture()
+        mp4 = capture(seconds=a.seconds)
         if not mp4:
             print("capture failed"); return 1
         clips = [mp4]
@@ -116,7 +132,10 @@ def main():
                        key=os.path.getmtime)[-max(2, a.clips):]
         if len(clips) < 2:
             print("not enough world clips"); return 1
-    total = sum(_duration(c) for c in clips)
+    if not clips:
+        print("no clips"); return 1
+    slow = max(0.25, min(4.0, float(a.slow or 1.0)))
+    total = sum(_duration(c) for c in clips) * slow
     state = _state()
     text = _narration(state)
     tmpdir = tempfile.mkdtemp(prefix="worldtour-", dir=MEDIA)
@@ -139,8 +158,15 @@ def main():
     cmd += ["-i", voice]
     fc = []
     for i in range(len(clips)):
-        fc.append("[%d:v]scale=1920:1080:force_original_aspect_ratio=increase,"
-                  "crop=1920:1080,setsar=1,fps=30[v%d]" % (i, i))
+        # Vertical world clips would lose KIT when cropped to 16:9. Keep the
+        # full frame and fill the sides with a blurred copy (no black bars).
+        pre = ("setpts=%.3f*PTS," % slow) if slow != 1.0 else ""
+        fc.append("[%d:v]%ssplit=2[bgsrc%d][fgsrc%d];"
+                  "[bgsrc%d]scale=1920:1080:force_original_aspect_ratio=increase,"
+                  "crop=1920:1080,gblur=sigma=24[bg%d];"
+                  "[fgsrc%d]scale=-2:1080[fg%d];"
+                  "[bg%d][fg%d]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[v%d]"
+                  % (i, pre, i, i, i, i, i, i, i, i, i))
     fc.append("".join("[v%d]" % i for i in range(len(clips))) +
               "concat=n=%d:v=1:a=0[v]" % len(clips))
     if music:
@@ -161,10 +187,10 @@ def main():
     try:
         from shared.visual_critic import critique_video
         vc = critique_video(out, context=(
-            "A horizontal narrated tour of Glowveil Hollow, a stylized 3D world "
-            "with KIT the white robot and Juniper the moss-cat. The world, "
-            "buildings and characters should be visible. Reject UI overlays, "
-            "loading screens, black bars, or a static clip."))
+            "A horizontal narrated tour of Glowveil Hollow, a stylized 3D world. "
+            "KIT the white robot should be visible; Juniper the moss-cat may "
+            "appear. The world and its buildings should be visible. Reject UI "
+            "overlays, loading screens, black bars, or a static clip."))
         print("critic", vc.get("score"), vc.get("ok"), vc.get("notes"))
         if not vc.get("ok"):
             print("rejected; not uploaded"); return 1

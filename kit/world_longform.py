@@ -23,7 +23,8 @@ DB = os.path.join(B, "data", "dashboard.db")
 SECONDS = 200
 
 
-def capture():
+def capture(seconds=None):
+    seconds = int(seconds or SECONDS)
     from playwright.sync_api import sync_playwright
     os.makedirs(MEDIA, exist_ok=True)
     tmp = tempfile.mkdtemp(prefix="worldlong-", dir=MEDIA)
@@ -46,7 +47,7 @@ def capture():
             ctx.close(); b.close(); shutil.rmtree(tmp, ignore_errors=True)
             return None
         loaded_at = time.time()
-        page.wait_for_timeout(SECONDS * 1000)
+        page.wait_for_timeout(seconds * 1000)
         ctx.close(); b.close()
     src = sorted(glob.glob(os.path.join(tmp, "*.webm")))
     if not src:
@@ -55,7 +56,7 @@ def capture():
     ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out = os.path.join(MEDIA, "long_%s.mp4" % ts)
     trim = max(0.0, loaded_at - started - 0.5)
-    print("trim before world:", round(trim, 1), "s; recording", SECONDS, "s")
+    print("trim before world:", round(trim, 1), "s; recording", seconds, "s")
     cmd = ["ffmpeg", "-y"]
     if trim:
         cmd += ["-ss", "%.2f" % trim]

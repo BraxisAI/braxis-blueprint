@@ -145,7 +145,8 @@ def _story_caption(state):
                 thought or 'none'))
     fallback = ("Day %d in %s: KIT is %s. The hollow is live at "
                 "braxisai.com/world — leave a stone, a flower, or a song and "
-                "KIT will find it." % (day, world, action))
+                "KIT will find it. KIT's notebook: braxisai.com/builds/kit-notebook/"
+                % (day, world, action))
     try:
         from shared.llm_router import call_llm
         prompt = (
@@ -160,7 +161,9 @@ def _story_caption(state):
         text = str((r or {}).get('content') or '').strip()
         text = text.replace('**', '').strip()
         if len(text) >= 40 and 'braxisai.com/world' in text:
-            return text[:320]
+            if 'kit-notebook' not in text:
+                text = text.rstrip() + " KIT's notebook: braxisai.com/builds/kit-notebook/"
+            return text[:430]
     except Exception:
         pass
     return fallback

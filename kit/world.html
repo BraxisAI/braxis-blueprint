@@ -605,7 +605,9 @@ prop(P+'grass_bermuda_01/main.gltf', 40, 20, 1.6); prop(P+'flower_ursinia/main.g
 prop(P+'flower_gazania/main.gltf', -30, -12, 1.2); prop(P+'crystalline_iceplant/main.gltf', 55, 8, 1.3);
 prop(P+'gate_latch_01/main.gltf', 0, -30, 1.6);
 // forest — procedural pines (guaranteed standing + green)
+const HOME_CLEAR = {x:-30, z:30, r:26};
 function pine(x, z, h, col){
+  if (Math.hypot(x-HOME_CLEAR.x, z-HOME_CLEAR.z) < HOME_CLEAR.r) return;
   const g0 = 5.7;
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(h*0.03, h*0.045, h*0.3, 6),
     new THREE.MeshStandardMaterial({color:0x4a3524, roughness:.95}));
@@ -626,6 +628,7 @@ for (let i=0;i<42;i++){
 for (let i=0;i<7;i++){
   const a = rnd()*Math.PI*2, rad = 55 + rnd()*18;
   const x = Math.cos(a)*rad, z = Math.sin(a)*rad, h = 6 + rnd()*3;
+  if (Math.hypot(x-HOME_CLEAR.x, z-HOME_CLEAR.z) < HOME_CLEAR.r) continue;
   const t = new THREE.Mesh(new THREE.CylinderGeometry(.25,.35,h*0.5,6), new THREE.MeshStandardMaterial({color:0x4a3524, roughness:.95}));
   t.position.set(x, 5.7+h*0.25, z); scene.add(t);
   const c = new THREE.Mesh(new THREE.SphereGeometry(h*0.38, 8, 6), new THREE.MeshStandardMaterial({color:0x2f5c28, roughness:.9}));
@@ -1401,7 +1404,7 @@ function buildMesh(b){
     // KIT's own builds used to be human-sized next to 30-unit city blocks.
     // Scale by shape so a tower reads as a tower and an overlook can be seen.
     const shapeScale = {tower: 3.0, spire: 2.6, monument: 2.5, arch: 2.0,
-                        bridge: 2.4, pavilion: 2.2, fountain: 1.5, garden: 1.3, tree: 1.7,
+                        bridge: 2.4, pavilion: 2.2, homestead: 1.8, fountain: 1.5, garden: 1.3, tree: 1.7,
                         lantern: 1.25, bench: 1.15, ring: 1.5, well: 1.4,
                         gate: 1.8, kiln: 1.5, boat: 1.6, windmill: 2.4,
                         sign: 1.2};
@@ -1451,14 +1454,142 @@ function buildMesh(b){
         const lamp = new THREE.Mesh(new THREE.SphereGeometry(.12,8,6), glow);
         lamp.position.set(sx*pw*.38, ph*.72, pw*.38); g.add(lamp);
       }
+    } else if (shape === 'homestead') {
+      const fw = w * 2.6, fd = w * 2.0, wh = h * .64;
+      const stone = new THREE.MeshStandardMaterial({color:0x9b9588, roughness:.95});
+      const roofM = new THREE.MeshStandardMaterial({color:0x6b3f2e, roughness:.9});
+      const glass = new THREE.MeshStandardMaterial({color:0xffd479, emissive:0xffb057, emissiveIntensity:.55, roughness:.25});
+      // foundation + floor
+      box(fw + 1.2, .35, fd + 1.2, stone, 0, .18, 0);
+      box(fw, .18, fd, wood, 0, .40, 0);
+      // front wall, split around a real doorway
+      const doorW = Math.min(3.2, fw * .16);
+      const sideW = (fw - doorW) / 2;
+      box(sideW, wh, .35, mat, -(doorW/2 + sideW/2), .4 + wh/2, fd/2);
+      box(sideW, wh, .35, mat, (doorW/2 + sideW/2), .4 + wh/2, fd/2);
+      box(doorW, wh*.28, .35, mat, 0, .4 + wh*.86, fd/2);
+      // back + side walls
+      box(fw, wh, .35, mat, 0, .4 + wh/2, -fd/2);
+      box(.35, wh, fd, mat, -fw/2, .4 + wh/2, 0);
+      box(.35, wh, fd, mat, fw/2, .4 + wh/2, 0);
+      // roof: a real gable, steep enough to see the walls from the ground
+      const rh = h * .36;
+      const roofLen = Math.hypot(fw/2, rh);
+      for (const sgn of [-1, 1]) {
+        const r = box(roofLen, .30, fd + 1.2, roofM, sgn*fw*.25,
+                      .4 + wh + rh*.5, 0);
+        r.rotation.z = sgn * Math.atan2(rh, fw/2);
+      }
+      // ridge beam
+      box(.35, .35, fd + 1.3, dark, 0, .4 + wh + rh, 0);
+      // windows + door frame
+      for (const x of [-fw*.30, fw*.30]) for (const y of [wh*.42, wh*.72]) {
+        const win = box(1.5, 1.1, .08, glass, x, .4 + y, fd/2 + .20);
+      }
+      box(doorW + .35, wh*.92, .16, wood, 0, .4 + wh*.46, fd/2 + .22);
+      // porch
+      box(fw*.82, .22, 3.2, wood, 0, .42, fd/2 + 1.7);
+      for (const x of [-fw*.34, fw*.34]) cyl(.16,.20, wh*.55, wood, x, .42 + wh*.28, fd/2 + 2.8);
+      box(fw*.78, .22, 3.4, roofM, 0, .42 + wh*.60, fd/2 + 1.8);
+      // chimney
+      box(1.1, h*.34, 1.1, stone, fw*.30, .4 + wh + h*.12, -fd*.18);
+      // pool + stone rim
+      const poolX = -fw*.78, poolZ = fd*.05;
+      box(8.4, .30, 5.4, stone, poolX, .16, poolZ);
+      const water = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 4.2),
+        new THREE.MeshStandardMaterial({color:0x3f9aa8, transparent:true, opacity:.78, roughness:.15, metalness:.15}));
+      water.rotation.x = -Math.PI/2; water.position.set(poolX, .34, poolZ); g.add(water);
+      for (const x of [-2.8,-.9,1.0,2.9]) {
+        const jet = new THREE.Mesh(new THREE.SphereGeometry(.10,8,6), glow);
+        jet.position.set(poolX + x, .42, poolZ + 1.6); g.add(jet);
+      }
+      // hot-air balloon tethered at the yard
+      const bx = fw*.86, bz = fd*.62;
+      const balloon = new THREE.Mesh(new THREE.SphereGeometry(2.4, 20, 14),
+        new THREE.MeshStandardMaterial({color:0xd77ba8, roughness:.72,
+          emissive:0x4a1f33, emissiveIntensity:.18}));
+      balloon.scale.set(1, 1.25, 1); balloon.position.set(bx, 8.2, bz); g.add(balloon);
+      const band = new THREE.Mesh(new THREE.TorusGeometry(2.42, .10, 8, 24),
+        new THREE.MeshStandardMaterial({color:0xffd479, roughness:.6}));
+      band.position.set(bx, 8.2, bz); band.rotation.x = Math.PI/2; g.add(band);
+      const basket = box(1.6, 1.0, 1.6, wood, bx, 3.4, bz);
+      for (const [dx,dz] of [[-.7,-.7],[.7,-.7],[-.7,.7],[.7,.7]]) {
+        const rope = cyl(.03,.03,3.6, dark, bx+dx, 5.4, bz+dz);
+      }
+      const tether = cyl(.04,.04,3.2, dark, bx-2.0, 1.6, bz+1.2);
+      const flame = new THREE.Mesh(new THREE.SphereGeometry(.28,8,6), glow);
+      flame.position.set(bx, 4.2, bz); g.add(flame);
+      // garden strip
+      for (let i=0;i<8;i++) {
+        const fx = -fw*.55 + (i%4)*1.2, fz = -fd*.62 + Math.floor(i/4)*1.0;
+        cyl(.04,.04,.5, green, fx, .62, fz);
+        const fl = new THREE.Mesh(new THREE.SphereGeometry(.14,8,6), glow);
+        fl.position.set(fx, .92, fz); g.add(fl);
+      }
     } else if (shape === 'ring') {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(w, .12, 10, 32), glow);
-      ring.position.y = h*.6; ring.rotation.y = .2; g.add(ring);
-      cyl(.18,.22,h*.6, mat, 0, h*.3, 0);
+      const stone = new THREE.MeshStandardMaterial({color:0x8f8a7e, roughness:.95});
+      // stepped stone base
+      cyl(w*1.25, w*1.45, .28, stone, 0, .14, 0);
+      cyl(w*1.05, w*1.20, .24, stone, 0, .38, 0);
+      // upright ring
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(w, .15, 10, 40), glow);
+      ring.position.y = h*.68; ring.rotation.y = .15; g.add(ring);
+      // supporting stones + runes around the ring
+      for (let i=0;i<8;i++){
+        const a = i/8*Math.PI*2, rr = w*0.92;
+        const rune = box(.22, .42, .22, i%2 ? mat : glow,
+                         Math.cos(a)*rr, h*.68 + Math.sin(a)*rr, .22);
+        rune.rotation.z = a;
+      }
+      for (const sx of [-1,1]) cyl(.16,.20,h*.48, mat, sx*w*.62, h*.24, 0);
+      for (const sx of [-1,1]) {
+        const orb = new THREE.Mesh(new THREE.SphereGeometry(.14,8,6), glow);
+        orb.position.set(sx*w*.62, h*.52, .3); g.add(orb);
+      }
+      // moss and a clock/ear/code motif where the name asks for one
+      for (let i=0;i<6;i++) {
+        const m = new THREE.Mesh(new THREE.DodecahedronGeometry(.12+Math.random()*.10,0), green);
+        m.position.set((Math.random()-.5)*w*1.8,.55+Math.random()*.2,(Math.random()-.5)*w*.6); g.add(m);
+      }
+      if (/clock/i.test(b.name || '')) {
+        const face = new THREE.Mesh(new THREE.CircleGeometry(w*.55, 24),
+          new THREE.MeshBasicMaterial({color:0x1c232c, side:THREE.DoubleSide}));
+        face.position.set(0, h*.68, .18); g.add(face);
+        for (let i=0;i<12;i++){
+          const a=i/12*Math.PI*2;
+          const tick=box(.04,.14,.04,glow,Math.sin(a)*w*.45,h*.68+Math.cos(a)*w*.45,.20);
+        }
+        const hand=box(.06,w*.38,.06,glow,0,h*.78,.22); hand.rotation.z=.5;
+      }
+      if (/ear/i.test(b.name || '')) {
+        for (let i=1;i<=3;i++){
+          const arc = new THREE.Mesh(new THREE.TorusGeometry(w*.35*i,.04,6,20,Math.PI*1.2), glow);
+          arc.position.set(0,h*.68,.22); arc.rotation.z=-.6; g.add(arc);
+        }
+      }
+      if (/coded/i.test(b.name || '')) {
+        for (let i=0;i<6;i++){
+          const glyph=box(.12,.12,.05,glow,-w*.55+i*w*.22,h*.42,.24);
+        }
+      }
     } else if (shape === 'arch') {
-      cyl(.18,.22,h, mat, -w, h/2, 0); cyl(.18,.22,h, mat, w, h/2, 0);
-      box(w*2+.5,.4,.4, mat, 0, h, 0);
-      box(w*1.4,.15,.25, glow, 0, h+.25, 0);
+      const stone = new THREE.MeshStandardMaterial({color:0x8f8a7e, roughness:.95});
+      for (const sx of [-1,1]) {
+        box(1.0,.35,w*.75,stone, sx*w*.92,.18,0);
+        box(.55,h*.9,.55,mat, sx*w*.92,h*.45,0);
+        box(.85,.25,.85,stone, sx*w*.92,h*.92,0);
+      }
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(w*.92,.20,8,24,Math.PI), mat);
+      arch.position.set(0,h*.92,0); g.add(arch);
+      box(.55,.55,.55,glow,0,h*1.85,0);
+      for (const sx of [-1,1]) {
+        const orb = new THREE.Mesh(new THREE.SphereGeometry(.15,8,6), glow);
+        orb.position.set(sx*w*.92, h*.55, .55); g.add(orb);
+        for (let i=0;i<3;i++) {
+          const vine = cyl(.04,.04,.7, green, sx*w*.92 + (Math.random()-.5)*.4, h*.4+i*.5, .32);
+          vine.rotation.z = (Math.random()-.5)*.5;
+        }
+      }
     } else if (shape === 'garden') {
       box(2.6,.25,1.7, new THREE.MeshStandardMaterial({color:0x4a3324, roughness:1}), 0,.12,0);
       for (let i=0;i<4+lvl*2;i++) { const x=-1.1+(i%4)*.72, z=-.5+Math.floor(i/4)*.72; cyl(.03,.03,.4, green, x,.4,z); const f=new THREE.Mesh(new THREE.SphereGeometry(.13,8,6), glow); f.position.set(x,.62,z); g.add(f); }
@@ -1546,10 +1677,11 @@ function renderBuild(b){
 
 function focusBuild(b){
   controls.autoRotate = false;
-  const tall = ['tower', 'arch', 'monument', 'bridge'].includes(b.kind);
-  const dist = 9 + (b.level || 1) * 1.2 + (tall ? 5 : 0);
-  controls.target.set(b.x, tall ? 8.5 : 6.4, b.z);
-  camera.position.set(b.x + dist, (tall ? 9 : 7) + dist * .35, b.z + dist);
+  const _home = (b.schema || {}).shape === 'homestead';
+  const tall = ['tower', 'arch', 'monument', 'bridge'].includes(b.kind) || _home;
+  const dist = _home ? 36 : 9 + (b.level || 1) * 1.2 + (tall ? 5 : 0);
+  controls.target.set(b.x, _home ? 5 : (tall ? 8.5 : 6.4), b.z);
+  camera.position.set(b.x + dist, _home ? 12 : (tall ? 9 : 7) + dist * .35, b.z + dist);
   if (_params.get('capture')) {
     _follow = false;
     controls.autoRotate = true; controls.autoRotateSpeed = .55;
@@ -1591,12 +1723,56 @@ setInterval(pollBuilds, 4000); pollBuilds();
 const galleryEl = document.getElementById('gallery');
 const galleryBtn = document.getElementById('galleryBtn');
 function _esc(s){return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// KIT's art, in the world. A pair of outdoor gallery walls uses the real
+// image creations, so walking the hollow shows what KIT painted.
+let ART_GROUP = null, ART_SLOTS = [];
+function buildArtWalls(){
+  if (ART_GROUP) return;
+  ART_GROUP = new THREE.Group();
+  const frameMat = new THREE.MeshStandardMaterial({color:0x4a3324, roughness:.9});
+  const wallMat = new THREE.MeshStandardMaterial({color:0x8b8375, roughness:.95});
+  for (const [wx,wz,ry] of [[18,18,-Math.PI/4],[-18,18,Math.PI/4]]) {
+    const g = new THREE.Group();
+    const y = surfaceY(wx,wz);
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(14, 5, .35), wallMat);
+    wall.position.set(0, 2.5, 0); wall.castShadow = true; wall.receiveShadow = true; g.add(wall);
+    for (let i=0;i<3;i++) {
+      const fr = new THREE.Mesh(new THREE.BoxGeometry(3.8, 3.2, .18), frameMat);
+      fr.position.set(-4.5 + i*4.5, 2.7, .25); g.add(fr);
+      const mat = new THREE.MeshBasicMaterial({color:0x1a1a1a});
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(3.35, 2.75), mat);
+      pic.position.set(-4.5 + i*4.5, 2.7, .36); g.add(pic);
+      ART_SLOTS.push(pic);
+    }
+    const lb = label("KIT'S OUTDOOR GALLERY", '#ffd479');
+    lb.position.set(0, 5.6, .4); lb.scale.set(12, 1.8, 1); g.add(lb);
+    g.position.set(wx, y, wz); g.rotation.y = ry;
+    ART_GROUP.add(g);
+  }
+  scene.add(ART_GROUP);
+}
+const _artLoader = new THREE.TextureLoader();
+function updateArtWalls(list){
+  buildArtWalls();
+  const imgs = (list || []).filter(c => c.image_url).slice(-6).reverse();
+  ART_SLOTS.forEach((slot, i) => {
+    const c = imgs[i];
+    if (!c) { slot.visible = false; return; }
+    _artLoader.load(c.image_url, tex => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      slot.material.map = tex; slot.material.color.set(0xffffff);
+      slot.material.needsUpdate = true; slot.visible = true;
+    }, undefined, () => { slot.visible = false; });
+  });
+}
+
 async function pollCreations(){
   try{
     const r = await fetch('/api/world/creations', {cache:'no-store'});
     if (!r.ok) return;
     const d = await r.json(); const list = d.creations || [];
     galleryBtn.textContent = "KIT's gallery (" + list.length + ')';
+    updateArtWalls(list);
     const realList = list.filter(c => c.image_url || c.audio_url || c.text);
     const shown = (realList.length ? realList : list).slice(-8).reverse();
     if (!shown.length){ document.getElementById('galleryList').innerHTML = '<div class="g" style="color:#6f7d92;font-size:10px">Nothing yet. KIT is still making.</div>'; return; }
@@ -1776,9 +1952,58 @@ function keyboardNav(){
   _follow = false;
   controls.autoRotate = false;
 }
+// Nightly fireworks: KIT's promised show over the hollow, plus a forced
+// preview for ?fireworks=1. Simple additive particle bursts; no textures.
+const _bursts=[];
+function fireworkBurst(x,y,z,color){
+  const n=150, pos=new Float32Array(n*3), col=new Float32Array(n*3);
+  const vel=[];
+  const c=new THREE.Color(color);
+  for(let i=0;i<n;i++){
+    const a=Math.random()*Math.PI*2, b=Math.acos(2*Math.random()-1);
+    const sp=4.0+Math.random()*8.0;
+    vel.push(new THREE.Vector3(Math.sin(b)*Math.cos(a)*sp, Math.cos(b)*sp, Math.sin(b)*Math.sin(a)*sp));
+    pos[i*3]=0; pos[i*3+1]=0; pos[i*3+2]=0;
+    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+  const mat=new THREE.PointsMaterial({size:3.0, sizeAttenuation:false, vertexColors:true, transparent:true,
+    opacity:1, blending:THREE.AdditiveBlending, depthWrite:false});
+  const pts=new THREE.Points(geo,mat); pts.position.set(x,y,z); scene.add(pts);
+  _bursts.push({pts,vel,life:0,max:2.1});
+}
+let _fwLast=0;
+function updateFireworks(){
+  const now=performance.now()/1000;
+  const forced=_params.has('fireworks');
+  const hour=new Date().getHours();
+  if(!forced && !(hour>=20 || hour<2)) return;
+  if(now-_fwLast < (forced?2.2:16)) return;
+  _fwLast=now;
+  const colors=[0xffb057,0xd77ba8,0x7dd3a8,0x6fc3ff,0xffd479,0xb987c9];
+  for(let k=0;k<(forced?6:2);k++){
+    fireworkBurst((Math.random()-.5)*46, 20+Math.random()*18, (Math.random()-.5)*46,
+                  colors[Math.floor(Math.random()*colors.length)]);
+  }
+  for(let i=_bursts.length-1;i>=0;i--){
+    const b=_bursts[i]; b.life+=.016;
+    const p=b.pts.geometry.attributes.position.array;
+    for(let j=0;j<b.vel.length;j++){
+      b.vel[j].y-=9.8*.016;
+      p[j*3]+=b.vel[j].x*.016; p[j*3+1]+=b.vel[j].y*.016; p[j*3+2]+=b.vel[j].z*.016;
+    }
+    b.pts.geometry.attributes.position.needsUpdate=true;
+    b.pts.material.opacity=Math.max(0,1-b.life/b.max);
+    if(b.life>=b.max){ scene.remove(b.pts); b.pts.geometry.dispose(); b.pts.material.dispose(); _bursts.splice(i,1); }
+  }
+}
+
 (function loop(){
   requestAnimationFrame(loop);
   keyboardNav();
+  updateFireworks();
   controls.update();
   animateResident();
   ditherPass.uniforms.time.value = performance.now() / 1000;

@@ -33,7 +33,7 @@ MEDIA = os.path.join(B, 'data', 'media', 'world')
 PUBLIC = 'https://braxisai.com/media/world/'
 WORLD = 'https://braxisai.com/world/'
 SHARED = os.path.join(B, 'data', 'world', 'live_shared.json')
-MIN_GAP = 20 * 3600
+MIN_GAP = 12 * 3600
 
 
 def _state():
@@ -66,11 +66,11 @@ def capture():
             record_video_size={'width': 1080, 'height': 1920})
         page = ctx.new_page()
         started = time.time()
-        page.goto(WORLD + '?video=1', wait_until='domcontentloaded', timeout=60000)
+        page.goto(WORLD + '?video=1', wait_until='domcontentloaded', timeout=90000)
         loaded_at = started
         ready = False
         try:
-            page.wait_for_function("() => { const e=document.getElementById('load'); return !e || getComputedStyle(e).display === 'none'; }", timeout=60000)
+            page.wait_for_function("() => { const e=document.getElementById('load'); return !e || getComputedStyle(e).display === 'none'; }", timeout=120000)
             loaded_at = time.time()
             ready = True
         except Exception as e:
@@ -123,8 +123,11 @@ def queue(video_url, state, with_audio=False):
     world = state.get('world_name') or 'the world'
     action = state.get('action') or 'living'
     thought = state.get('thought') or ''
-    cap = ('A 15-second window into %s. KIT is %s. %s The world is live: %s'
-           % (world, action, thought[:180], WORLD))
+    hook = 'Live from %s, %s UTC.' % (
+        world, dt.datetime.now(dt.timezone.utc).strftime('%H:%M UTC'))
+    cap = hook + (chr(10) * 2) + (
+        'A 15-second window into %s. KIT is %s. %s The world is live: %s'
+        % (world, action, thought[:180], WORLD))
     if with_audio:
         cap += ' With KIT’s own song.'
     title = ('Live from %s' % world)[:110]
@@ -133,8 +136,8 @@ def queue(video_url, state, with_audio=False):
     plan = []
     for platform, ctype, why in route('video', weapon='kit_world',
                                       image_url=video_url):
-        if platform in ('x', 'twitter'):
-            continue  # X is parked; do not queue dead rows.
+        if platform not in ('tiktok', 'instagram', 'youtube', 'facebook'):
+            continue  # dead/zero-cap platforms only park rows
         rows.append((platform, ctype, why))
         plan.append({'platform': platform, 'kind': ctype, 'why': why})
     if not rows:
@@ -149,7 +152,11 @@ def queue(video_url, state, with_audio=False):
             'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
             (str(uuid.uuid4()), 'kit_world', platform, ctype, title, cap[:900],
              video_url, '#BraxisWorld #AI #3D', now, 'approved', now, title[:160]))
-        ids.append(cur.lastrowid)
+        _id = cur.lastrowid
+        if not _id:
+            print('  DROPPED by story dedup: %s %s' % (platform, title[:60]))
+            continue
+        ids.append(_id)
         print('  queue %-10s %-6s — %s' % (platform, ctype, why[:100]))
     con.commit()
     con.close()
@@ -185,6 +192,26 @@ def main():
                 return 1
     except Exception as e:
         print('video not served:', e)
+        return 1
+    # The world clip is only worth posting if a stranger can see the world.
+    # Fail closed: no visual verdict means no post, not a silent pass.
+    try:
+        from shared.visual_critic import critique_video
+        vc = critique_video(
+            mp4,
+            context=("A vertical short of Glowveil Hollow, a stylized 3D world. "
+                     "KIT is a white robot resident; Juniper is a green moss-cat. "
+                     "The world and its buildings should be clearly visible. "
+                     "Reject UI panels, HUD overlays, a tree blocking the subject, "
+                     "a mostly empty frame, or a clip that is a still image."))
+        print('visual critic:', vc.get('score'), vc.get('ok'), vc.get('notes'))
+        for d in (vc.get('defects') or []):
+            print('  defect:', d)
+        if not vc.get('ok'):
+            print('world video rejected by visual critic')
+            return 1
+    except Exception as e:
+        print('visual critic unavailable; refusing to post unseen:', str(e)[:160])
         return 1
     ids = queue(url, _state(), with_audio=bool(LAST_AUDIO))
     try:

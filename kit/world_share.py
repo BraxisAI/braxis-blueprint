@@ -7,7 +7,7 @@ shit!!"
 On a new build this opens https://braxisai.com/world/?build=<id>&capture=1 in
 headless Chromium, waits for the scene, takes a clean 1080x1080 frame, checks
 that the image is actually served, and queues honest posts through the existing
-pending_content drains (facebook, instagram, linkedin, x). No invented numbers,
+pending_content drains (facebook, instagram, linkedin). No invented numbers,
 no fake claims, no static-video upload to TikTok.
 
 Usage:
@@ -85,31 +85,40 @@ def caption(build, state):
 def queue(build, image_url, state):
     cap = caption(build, state)
     now = dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
+    # The queue has a BEFORE INSERT story-dedup trigger: a repeated first line
+    # is dropped silently. A real timestamp keeps each world post distinct
+    # without inventing a claim.
+    hook = 'Live from %s, %s UTC.' % (
+        state.get('world_name') or 'Braxis World',
+        dt.datetime.now(dt.timezone.utc).strftime('%H:%M UTC'))
     title = ('KIT built %s' % (build.get('name') or build.get('kind')))[:110]
     bodies = {
-        'facebook': cap + ' Built in the open.',
-        'instagram': cap + ' 🌱',
-        'linkedin': 'A small robot is building a world in public. ' + cap,
-        'x': cap,
-        'bluesky': cap,
-        'mastodon': cap,
-        'youtube': cap,
-        'tiktok': cap,
+        'facebook': hook + '\n\n' + cap + ' Built in the open.',
+        'instagram': hook + '\n\n' + cap + ' 🌱',
+        'linkedin': hook + '\n\n' + 'A small robot is building a world in public. ' + cap,
+        'x': hook + '\n\n' + cap,
+        'bluesky': hook + '\n\n' + cap,
+        'mastodon': hook + '\n\n' + cap,
+        'youtube': hook + '\n\n' + cap,
+        'tiktok': hook + '\n\n' + cap,
     }
     rows = []
     plan = []
     try:
         from shared.determiner import route
+        # Only queue where the drains actually publish. Bluesky and Mastodon
+        # are evaluator-capped at 0, so routing there just parks dead rows and
+        # makes the world look quieter than it is.
         for platform, ctype, why in route('image', weapon='kit_world', image_url=image_url):
-            if platform in ('x', 'twitter'):
-                continue  # X is parked; do not queue dead rows.
+            if platform not in ('facebook', 'instagram', 'linkedin'):
+                continue
             rows.append((platform, ctype, bodies.get(platform, cap),
                          image_url if ctype == 'image' else None, why))
             plan.append({'platform': platform, 'kind': ctype, 'why': why})
         seen = {r[0] for r in rows}
         for platform, ctype, why in route('text', weapon='kit_world'):
-            if platform in ('x', 'twitter'):
-                continue  # X is parked; do not queue dead rows.
+            if platform not in ('facebook', 'linkedin'):
+                continue
             if platform not in seen:
                 rows.append((platform, ctype, bodies.get(platform, cap), None, why))
                 plan.append({'platform': platform, 'kind': ctype, 'why': why})
@@ -137,7 +146,11 @@ def queue(build, image_url, state):
             'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
             (str(uuid.uuid4()), 'kit_world', platform, ctype, title, body[:900],
              img, '#BraxisWorld #AI #3D', now, 'approved', now, title[:160]))
-        ids.append(cur.lastrowid)
+        _id = cur.lastrowid
+        if not _id:
+            print('  DROPPED by story dedup: %s %s' % (platform, title[:60]))
+            continue
+        ids.append(_id)
         print('  queue %-10s %-6s — %s' % (platform, ctype, why[:100]))
     con.commit()
     con.close()

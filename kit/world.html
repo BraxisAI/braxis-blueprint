@@ -459,6 +459,7 @@ function road(x1,z1,x2,z2,w=3.2){
 road(24,0,2,2); road(-24,0,-2,2); road(0,24,2,2); road(0,-24,-2,2);
 
 // label sprites
+const LABELS = [];
 function label(text, color='#e6e8ee'){
   const c = document.createElement('canvas'); c.width = 1024; c.height = 128;
   const ctx = c.getContext('2d');
@@ -471,6 +472,8 @@ function label(text, color='#e6e8ee'){
   const t = new THREE.CanvasTexture(c);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({map:t, transparent:true, depthWrite:false}));
   s.scale.set(18, 2.25, 1);
+  if (new URLSearchParams(location.search).has('video')) s.visible = false;
+  LABELS.push(s);
   return s;
 }
 
@@ -1656,12 +1659,24 @@ function animateBuilds(dt){
 }
 
 if (_videoMode) {
-  for (const id of ['offer', 'note', 'toast']) {
+  // A world clip is for strangers, not a screen tour. Remove every panel and
+  // put the camera in a slow three-quarter orbit around KIT and the hollow.
+  for (const id of ['offer', 'note', 'toast', 'hud', 'res', 'talk',
+                    'wideBtn', 'resToggle', 'game']) {
     const e = document.getElementById(id);
     if (e) e.style.display = 'none';
   }
+  for (const l of LABELS) l.visible = false;
   _follow = true;
-  controls.autoRotate = false;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 1.6;
+  controls.target.set(resident.position.x, resident.position.y + 2, resident.position.z);
+  camera.position.set(resident.position.x + 16, resident.position.y + 10, resident.position.z + 16);
+  _ring.visible = false;
+  setTimeout(() => scene.traverse(o => {
+    if (o.isMesh && o.geometry && o.geometry.type === 'TorusGeometry') o.visible = false;
+  }), 2500);
+  controls.update();
 }
 
 addEventListener('resize', ()=>{ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });

@@ -139,7 +139,7 @@
   <button id="gameReset">play again</button>
 </div>
 <div id="toast"></div>
-<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/","three/examples/jsm/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/","three/examples/jsm/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/","postprocessing":"https://cdn.jsdelivr.net/npm/postprocessing@6.36.4/build/index.js"}}</script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -198,7 +198,7 @@ controls.maxPolarAngle = 1.42; controls.minDistance = 18; controls.maxDistance =
 // image-based light: PBR materials need something to reflect
 try {
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const env = pmrem.fromScene(new RoomEnvironment(), 0.05);
+  const env = pmrem.fromScene(new RoomEnvironment(), 0.035);
   scene.environment = env.texture;
   pmrem.dispose();
 } catch(e) { console.warn('environment failed', e); }
@@ -527,27 +527,16 @@ function proceduralTower(x, z, targetH, name, color){
   const lb = label(name, color); lb.position.set(x, g0+4+h+5, z); scene.add(lb);
 }
 function place(url, x, z, name, targetH, color){
-  loader.load(url, (gltf)=>{
-    const o = gltf.scene;
-    const box = new THREE.Box3().setFromObject(o);
-    const size = box.getSize(new THREE.Vector3());
-    const s = targetH / Math.max(size.y, .001);
-    o.scale.setScalar(s);
-    const box2 = new THREE.Box3().setFromObject(o);
-    const c = box2.getCenter(new THREE.Vector3());
-    o.position.set(x - c.x, -box2.min.y + 5.7, z - c.z);
-    o.traverse(n=>{ if(n.isMesh){ n.castShadow = true; n.receiveShadow = true; } });
-    scene.add(o);
-    OBSTACLES.push({x:x, z:z, r:Math.max(1.6, targetH*0.30)});
-    const lb = label(name, color); lb.position.set(x, targetH + 5.7 + 3.4, z); scene.add(lb);
-    placed.push(name); document.getElementById('load').style.display = placed.length>=3 ? 'none' : 'flex';
-    document.getElementById('load').textContent = 'loading the city… (' + placed.length + '/3)';
-  }, undefined, ()=>{
-    proceduralTower(x, z, targetH, name, color);
-    placed.push(name);
-    document.getElementById('load').style.display = placed.length>=3 ? 'none' : 'flex';
-    document.getElementById('load').textContent = 'loading the city… (' + placed.length + '/3)';
-  });
+  // The GLB city models are not present on this host; requesting them only
+  // produced 404s in every visitor's console. The procedural tower is the
+  // building now, not a fallback after a failed network call.
+  proceduralTower(x, z, targetH, name, color);
+  placed.push(name);
+  const le = document.getElementById('load');
+  if (le) {
+    le.style.display = placed.length>=3 ? 'none' : 'flex';
+    le.textContent = 'loading the city… (' + placed.length + '/3)';
+  }
 }
 const M = 'https://braxisai.com/media/world/';
 // Vesper's Trading Post — procedural (the TRELLIS v1 render becomes artifact 001)
@@ -571,68 +560,36 @@ const M = 'https://braxisai.com/media/world/';
   const ped = new THREE.Mesh(new THREE.BoxGeometry(3.4,1.3,3.4),
     new THREE.MeshStandardMaterial({color:0x555a66}));
   ped.position.set(px, 5.7+0.65, pz); ped.castShadow = true; scene.add(ped);
-  loader.load(M+'trading_post.glb', (gltf)=>{
-    const o = gltf.scene;
-    const box = new THREE.Box3().setFromObject(o);
-    const size = box.getSize(new THREE.Vector3());
-    o.scale.setScalar(3.0 / Math.max(size.y, .001));
-    const b2 = new THREE.Box3().setFromObject(o);
-    const c2 = b2.getCenter(new THREE.Vector3());
-    o.position.set(px - c2.x, -b2.min.y + 5.7 + 1.3, pz - c2.z);
-    o.traverse(n=>{ if(n.isMesh) n.castShadow = true; });
-    scene.add(o);
-    const pl = label('artifact 001 — the first generated building', '#8aa0b8');
-    pl.position.set(px, 5.7+6, pz); scene.add(pl);
-  }, undefined, ()=>{});
+  // No GLB asset is shipped for artifact 001; render a small faceted
+  // artifact instead of asking the network for a file that 404s.
+  const art = new THREE.Mesh(new THREE.IcosahedronGeometry(1.45, 0),
+    new THREE.MeshStandardMaterial({color:0xd7b8ff, emissive:0x6f4a9a,
+      emissiveIntensity:.45, roughness:.3, metalness:.55}));
+  art.position.set(px, 5.7 + 1.3 + 1.5, pz); art.castShadow = true; scene.add(art);
+  const pl = label('artifact 001 — the first generated building', '#8aa0b8');
+  pl.position.set(px, 5.7+6, pz); scene.add(pl);
 })();
 place(M+'ledger.glb',       -24,   0, "MAYA's Ledger",          7,  '#7dd3a8');
 place(M+'observatory.glb',    0,  24, "Echo's Observatory",     7,  '#d7b8ff');
 place(M+'market.glb',         0, -24, "The Market",             6,  '#ff9f6e');
 
-// CC0 city props (Poly Haven) — small human things that make it a place
-const P = 'https://braxisai.com/media/world/props/';
-
-function prop(url, x, z, h, ry=0){
-  loader.load(url, (gltf)=>{
-    const o = gltf.scene;
-    const box = new THREE.Box3().setFromObject(o);
-    const size = box.getSize(new THREE.Vector3());
-    let s = h / Math.max(size.y, .001);
-    if (s > 4) s = 4;  // guard: models with degenerate bboxes went giant
-    o.scale.setScalar(s);
-    const box2 = new THREE.Box3().setFromObject(o);
-    const c = box2.getCenter(new THREE.Vector3());
-    o.position.set(x - c.x, -box2.min.y + 5.7, z - c.z);
-    o.rotation.y = ry;
-    console.log('PROP SIZE', url.split('/props/')[1], size.x.toFixed(1), size.y.toFixed(1), size.z.toFixed(1), 'scale', s.toFixed(2));
-    o.traverse(n=>{ if(n.isMesh){ n.castShadow = true; n.receiveShadow = true;
-      if(n.material && n.material.color) n.material = n.material.clone(); } });
-    scene.add(o);
-    OBSTACLES.push({x:x, z:z, r:Math.max(.55, Math.min(2.8, h*0.16))});
-    console.log('PROP OK', url, scene.children.length);
-  }, undefined, (err)=>console.log('PROP FAIL', url, String(err).slice(0,120)));
+// A few guaranteed-procedural lanterns instead of the missing Poly Haven
+// GLB props (every one of those requests 404'd).
+function streetLantern(x, z){
+  const g0 = 5.7;
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(.10,.14,3.6,8),
+    new THREE.MeshStandardMaterial({color:0x2b2620, roughness:.85}));
+  post.position.set(x, g0+1.8, z); post.castShadow = true; scene.add(post);
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(.35,12,10),
+    new THREE.MeshBasicMaterial({color:0xffd479}));
+  orb.position.set(x, g0+3.8, z); scene.add(orb);
+  const light = new THREE.PointLight(0xffb057, 1.4, 12, 2);
+  light.position.set(x, g0+3.8, z); scene.add(light);
+  OBSTACLES.push({x:x, z:z, r:.7});
 }
-prop(P+'Lantern_01/main.gltf',      30,  4, 5.0);
-prop(P+'Lantern_01/main.gltf',      18,  4, 5.0);
-prop(P+'Lantern_01/main.gltf',       8, 18, 5.0);
-prop(P+'brass_diya_lantern/main.gltf', -24, 5, 2.6);
-prop(P+'brass_candleholders/main.gltf', 24, 6, 2.2);
-prop(P+'WoodenTable_01/main.gltf',   1.5, -18, 1.7, .4);
-prop(P+'WoodenChair_01/main.gltf',   4.5, -19.5, 1.6, 2.2);
-prop(P+'WoodenChair_01/main.gltf',  -1.5, -19.5, 1.6, -2.2);
-prop(P+'WoodenTable_02/main.gltf', -20, 5, 1.7, 1.1);
-prop(P+'WoodenTable_03/main.gltf', -27, -3, 1.5, -.6);
-prop(P+'bench_vice_01/main.gltf',    6, 20, 2.0, 1.6);
-prop(P+'carved_wooden_elephant/main.gltf', 7, 7, 4.2, 2.6);
-prop(P+'CoffeeCart_01/main.gltf',  -16, 6, 2.4, -1.4);
-// nature
-prop(P+'fir_tree_01/main.gltf',   48, 34, 12);  prop(P+'fir_tree_01/main.gltf',  -52, 30, 13);
-prop(P+'fir_tree_01/main.gltf',   64, -42, 12); prop(P+'fir_tree_01/main.gltf',  -70, -38, 10);
-prop(P+'dead_tree_trunk/main.gltf', -60, -25, 7); prop(P+'dead_tree_trunk_02/main.gltf', 74, 55, 7);
-prop(P+'grass_medium_01/main.gltf', 12, -34, 1.8); prop(P+'grass_medium_02/main.gltf', -14, 36, 1.8);
-prop(P+'grass_bermuda_01/main.gltf', 40, 20, 1.6); prop(P+'flower_ursinia/main.gltf', -6, -32, 1.2);
-prop(P+'flower_gazania/main.gltf', -30, -12, 1.2); prop(P+'crystalline_iceplant/main.gltf', 55, 8, 1.3);
-prop(P+'gate_latch_01/main.gltf', 0, -30, 1.6);
+for (const [lx,lz] of [[30,4],[18,4],[8,18],[-24,5],[24,6],[-20,5],[-27,-3],[6,20],[7,7],[-16,6],[0,-30]])
+  streetLantern(lx,lz);
+
 // forest — procedural pines (guaranteed standing + green)
 const HOME_CLEAR = {x:110, z:-90, r:32};
 function pine(x, z, h, col){

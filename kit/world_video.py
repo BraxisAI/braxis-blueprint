@@ -33,7 +33,7 @@ MEDIA = os.path.join(B, 'data', 'media', 'world')
 PUBLIC = 'https://braxisai.com/media/world/'
 WORLD = 'https://braxisai.com/world/'
 SHARED = os.path.join(B, 'data', 'world', 'live_shared.json')
-MIN_GAP = 12 * 3600
+MIN_GAP = 6 * 3600
 
 
 def _state():

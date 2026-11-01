@@ -1715,7 +1715,7 @@ async function pollBuilds(){
     if (sr.ok) { const sd = await sr.json(); KIT_SHAPES = sd.shapes || {}; }
     if (!r.ok) return;
     const d = await r.json();
-    const list = d.builds || [];
+    const list = (d.builds || []).filter(b => !b.hidden);
     const ids = new Set(list.map(b => b.id));
     for (const [id, g] of Array.from(_meshById)) {
       if (!ids.has(id)) {
@@ -1769,32 +1769,32 @@ function buildArtWalls(){
   for (const [wx,wz,ry] of [[22,22,-Math.PI/4],[-22,22,Math.PI/4]]) {
     const g = new THREE.Group();
     const y = surfaceY(wx,wz);
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(20, 6.2, .35), wallMat);
-    wall.position.set(0, 3.1, 0); wall.castShadow = true; wall.receiveShadow = true; g.add(wall);
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(30, 9, .45), wallMat);
+    wall.position.set(0, 4.5, 0); wall.castShadow = true; wall.receiveShadow = true; g.add(wall);
     for (let i=0;i<4;i++) {
-      const fr = new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.0, .18), frameMat);
-      fr.position.set(-6.9 + i*4.6, 3.3, .25); g.add(fr);
+      const fr = new THREE.Mesh(new THREE.BoxGeometry(6.0, 5.4, .22), frameMat);
+      fr.position.set(-10.5 + i*7.0, 4.4, .30); g.add(fr);
       const mat = new THREE.MeshBasicMaterial({color:0x1a1a1a});
-      const pic = new THREE.Mesh(new THREE.PlaneGeometry(3.75, 3.55), mat);
-      pic.position.set(-6.9 + i*4.6, 3.3, .36); g.add(pic);
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(5.35, 4.75), mat);
+      pic.position.set(-10.5 + i*7.0, 4.4, .43); g.add(pic);
       ART_SLOTS.push(pic);
     }
     const lb = label("KIT'S OUTDOOR GALLERY", '#ffd479');
-    lb.position.set(0, 6.8, .4); lb.scale.set(15, 1.9, 1); g.add(lb);
+    lb.position.set(0, 9.8, .5); lb.scale.set(20, 2.4, 1); g.add(lb);
     g.position.set(wx, y, wz); g.rotation.y = ry;
     ART_GROUP.add(g);
   }
   // a poem wall beside KIT's house
   const pg = new THREE.Group();
-  const px = HOME_CLEAR.x + 13, pz = HOME_CLEAR.z + 7;
-  const board = new THREE.Mesh(new THREE.BoxGeometry(7, 5.6, .35), wallMat);
-  board.position.set(0, 2.8, 0); pg.add(board);
+  const px = 0, pz = -27;
+  const board = new THREE.Mesh(new THREE.BoxGeometry(15, 10, .5), wallMat);
+  board.position.set(0, 5, 0); pg.add(board);
   POEM_BOARD = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 5.0),
     new THREE.MeshBasicMaterial({color:0x17130f}));
-  POEM_BOARD.position.set(0, 2.8, .22); pg.add(POEM_BOARD);
+  POEM_BOARD.position.set(0, 5, .30); pg.add(POEM_BOARD);
   const plb = label("KIT'S POEMS", '#ffd479');
-  plb.position.set(0, 6.0, .35); plb.scale.set(9, 1.6, 1); pg.add(plb);
-  pg.position.set(px, surfaceY(px,pz), pz); pg.rotation.y = -Math.PI/3;
+  plb.position.set(0, 10.8, .4); plb.scale.set(15, 2.1, 1); pg.add(plb);
+  pg.position.set(px, surfaceY(px,pz), pz); pg.rotation.y = 0;
   ART_GROUP.add(pg);
   scene.add(ART_GROUP);
 }

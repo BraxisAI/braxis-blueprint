@@ -99,6 +99,7 @@
   <div class="project" id="resPractice"></div>
   <div class="dream" id="resDream"></div>
   <div class="dream" id="resCompanion"></div>
+  <div class="dream" id="resCompanionTalk"></div>
   <div class="dream" id="resFieldNote"></div>
   <div class="dream" id="resJournal"></div>
   <div class="creation" id="resCreation"></div>
@@ -891,6 +892,8 @@ function updateRes(){
   el('resPractice').textContent = pr ? ('ritual: ' + (pr.name || 'a practice') + ' · step ' + ((pr.index || 0) + 1) + ' of ' + ((pr.steps || []).length)) : '';
   el('resDream').textContent = R.dream ? ('dream: ' + R.dream) : '';
   el('resCompanion').textContent = R.companion ? ('companion: ' + (R.companion.name || 'a friend') + ' the ' + String(R.companion.kind || 'companion').replace(/-/g, ' ') + (R.companion.last_words ? ' · "' + R.companion.last_words + '"' : '')) : '';
+  const _cd = (R.companion_dialog || []).slice(-1)[0];
+  el('resCompanionTalk').textContent = _cd ? ('last talk — KIT: ' + String(_cd.kit || '').slice(0, 90) + ' · Juniper: ' + String(_cd.juniper || '').slice(0, 90)) : '';
   el('resFieldNote').textContent = (R.last_field_note && R.last_field_note.topic) ? ('field note: ' + R.last_field_note.topic + ' · ' + String(R.last_field_note.note || '').slice(0, 110)) : '';
   el('resJournal').textContent = R.reflection ? ('diary: ' + R.reflection.slice(0,180)) : '';
   const lc = R.last_creation;
@@ -907,7 +910,7 @@ function updateRes(){
   const _age = _born ? ' · day ' + (_days + 1) + ' · ' + (_days ? _days + 'd ' : '') + _hours + 'h here' : '';
   const _ageNote = _born ? (' KIT has been here ' + (_days ? _days + ' day' + (_days === 1 ? '' : 's') + ' ' : '') + _hours + 'h (day ' + (_days + 1) + ').') : '';
   el('resMeta').textContent = 'blueprints ' + ((R.blueprints || []).length) +
-    ' · builds ' + (R.builds || 0) + ' · page loads ' + (R.visits_total || 0) + ' · known visitors ' + Object.keys(R.visitor_impressions || {}).length + ' · offerings ' + (R.offerings || 0) + ' · signals ' + (R.signals_total || 0) + ' · resonance ' + Number(R.resonance || 0).toFixed(2) +
+    ' · builds ' + (R.builds || 0) + ' · page loads ' + (R.visits_total || 0) + ' · known visitors ' + (R.visitors || 0) + ' · offerings ' + (R.offerings || 0) + ' · signals ' + (R.signals_total || 0) + ' · resonance ' + Number(R.resonance || 0).toFixed(2) +
     (R.pronouns ? ' · ' + R.pronouns : '') + _age;
   el('kitAge').textContent = _ageNote;
   for (const [k] of DRIVE_LABELS) {

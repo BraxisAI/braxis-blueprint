@@ -539,6 +539,7 @@ def _default_state():
         'recent': [],
         'visitor_messages': [],
         'visitors': 0,
+        'visit_ips': {},
         'offerings': 0,
         'ideas': 0,
         'acts': 0,
@@ -3923,6 +3924,17 @@ def _apply_visits(state):
         event = str(it.get('event') or 'load')
         vid = str(it.get('vid') or '')[:64]
         dur = max(0.0, min(7200.0, float(it.get('duration') or 0)))
+        # Count real visitors by IP hash, not by offerings. Before this, a
+        # visitor who only loaded the world and read it was invisible.
+        ip = str(it.get('ip') or '')
+        if ip:
+            key = hashlib.sha1(ip.encode()).hexdigest()[:8]
+            vips = state.setdefault('visit_ips', {})
+            rec = vips.setdefault(key, {'first': _now(), 'last': _now(), 'count': 0})
+            rec['last'] = _now()
+            if event == 'load':
+                rec['count'] = int(rec.get('count') or 0) + 1
+            state['visitors'] = len(vips)
         ids = state.setdefault('visit_ids', [])
         if event == 'load':
             state['visits_total'] = int(state.get('visits_total', 0)) + 1
@@ -4025,7 +4037,8 @@ def _apply_offers(state):
                                'kind': kind, 'text': text, 'ip_hash': fid})
         log('OFFER %s %s' % (kind, text[:80]))
     if items:
-        state['visitors'] = len(state.get('visitor_impressions') or {})
+        state['visitors'] = len(state.get('visit_ips') or
+                                 state.get('visitor_impressions') or {})
 
 
 def _clean(text):
@@ -4822,6 +4835,7 @@ class Handler(BaseHTTPRequestHandler):
                     'vid': str(data.get('vid') or '')[:64],
                     'duration': data.get('duration') or 0,
                     'path': str(data.get('path') or '')[:80],
+                    'ip': _request_ip(self),
                 })
             self._send(200, {'ok': True})
             return

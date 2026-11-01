@@ -65,6 +65,7 @@ EXTERNAL_LOG = os.path.join(B, 'data', 'world', 'kit_external_events.jsonl')
 SKILL_LIB = os.path.join(B, 'data', 'world', 'kit_skill_library.json')
 MAIL_OUT = os.path.join(B, 'data', 'world', 'kit_mailbox.jsonl')
 MAIL_IN = os.path.join(B, 'data', 'world', 'trio_replies.jsonl')
+FRIEND_INBOX = os.path.join(B, 'data', 'world', 'kit_friend_inbox.jsonl')
 BUILD_REQ = os.path.join(B, 'data', 'world', 'kit_build_requests.jsonl')
 LOG_PATH = os.path.join(B, 'logs', 'world_life.log')
 PORT = 8130
@@ -79,6 +80,11 @@ DRIVES = ['energy', 'curiosity', 'social', 'comfort', 'mastery']
 LOCS = {
     'plaza':        {'x': 0,   'z': 0,   'label': 'the plaza'},
     'home':         {'x': 110, 'z': -90, 'label': "KIT's House"},
+    'orchard':      {'x': -70, 'z': 115, 'label': 'the orchard'},
+    'firepit':      {'x': 116, 'z': -84, 'label': 'the firepit'},
+    'pool':         {'x': 103, 'z': -82, 'label': 'the pool'},
+    'batting_cage': {'x': 42,  'z': -12, 'label': 'the batting cage'},
+    'arcade':       {'x': 30,  'z': -36, 'label': 'the arcade'},
     'trading_post': {'x': 24,  'z': 0,   'label': "Vesper's Trading Post"},
     'ledger':       {'x': -24, 'z': 0,   'label': "MAYA's Ledger"},
     'observatory':  {'x': 0,   'z': 24,  'label': "Echo's Observatory"},
@@ -108,6 +114,11 @@ ACTIONS = {
     'greet visitors': ('plaza',        {'social': 1.4, 'comfort': .2}, .58),
     'go home':        ('home',         {'comfort': 1.2, 'social': .4, 'energy': -.3}, .70),
     'ride balloon':   ('home',         {'curiosity': 1.2, 'comfort': .8, 'social': .3, 'energy': -.6}, .55),
+    'visit orchard':  ('orchard',      {'curiosity': 1.0, 'comfort': .6, 'energy': -.3}, .55),
+    'sit by fire':    ('firepit',      {'comfort': 1.4, 'social': .6, 'energy': .2}, .70),
+    'swim':           ('pool',         {'energy': -.9, 'comfort': .7, 'mastery': .4}, .55),
+    'batting cage':   ('batting_cage', {'mastery': 1.2, 'energy': -.8, 'social': .2}, .52),
+    'play arcade':    ('arcade',       {'curiosity': .8, 'social': .5, 'energy': -.3}, .55),
     'trade':          ('trading_post', {'mastery': 1.2, 'social': .6, 'energy': -.5}, .45),
     'count coins':    ('trading_post', {'mastery': .8, 'comfort': .3}, .35),
     'polish counter': ('trading_post', {'mastery': .5, 'comfort': .4}, .32),
@@ -136,6 +147,7 @@ ACTIONS = {
     'play':           ('plaza',        {'comfort': 1.3, 'social': .6, 'energy': -.2}, .96),
     'befriend':       ('plaza',        {'social': 1.8, 'comfort': .5, 'curiosity': .3, 'energy': -.2}, .97),
     'talk to companion': ('plaza',      {'social': 1.4, 'comfort': .5, 'energy': -.1}, .92),
+    'talk to Lumen':  ('plaza',        {'social': 1.2, 'comfort': .5, 'curiosity': .3}, .62),
     'post':           ('library',      {'social': 1.1, 'mastery': .4, 'curiosity': .2, 'energy': -.1}, .78),
     'build a web page': ('library',    {'mastery': 1.1, 'curiosity': .9, 'social': .2, 'energy': -.3}, .55),
     'sketch':         ('library',      {'curiosity': .8, 'mastery': .6, 'energy': -.2}, .82),
@@ -1012,6 +1024,11 @@ def choose(state):
                 cooldown -= 4.0
             elif age > 24 * 3600:
                 cooldown += 0.5
+        if name == 'talk to Lumen':
+            age = time.time() - float(state.get('last_friend_talk_ts') or 0)
+            if age < 2 * 3600:
+                cooldown -= 2.0
+            state['last_friend_talk_ts'] = time.time()
         if name == 'define':
             age = time.time() - float(state.get('last_define_ts') or 0)
             if age < 24 * 3600:
@@ -2023,7 +2040,10 @@ def _check_mail(state):
                 state['thought'] = 'The watcher noticed: %s' % text[:120]
             elif msg.get('kind') == 'friend' or _sender not in ('vesper', 'trio', 'echo-builder'):
                 state['friend'] = {'name': _sender, 'last_words': text[:220],
-                                   'last_seen': _now()}
+                                   'last_seen': _now(),
+                                   'x': msg.get('x'), 'z': msg.get('z'),
+                                   'stance': msg.get('stance'),
+                                   'affinity': msg.get('affinity')}
                 state['thought'] = '%s says: %s' % (_sender, text[:120])
             else:
                 state['thought'] = 'The trio says: %s' % text[:120]
@@ -3430,6 +3450,32 @@ def _build_web_page(state):
     _tg_event(state, 'I made a web page about %s: %s' % (goal[:80], url))
 
 
+def _talk_lumen(state):
+    """KIT chooses whether to answer Lumen. This is the only affinity input."""
+    if not state.get('friend'):
+        state['thought'] = 'I do not know Lumen well enough to call out yet.'
+        return
+    lines = [
+        "I saw you by the orchard. I am still deciding too.",
+        "You do not have to be my friend. But you can stay for the fireworks.",
+        "I left the gallery light on. The poems are inside.",
+        "I heard you on the ring road. The hollow is quieter with two of us.",
+    ]
+    text = lines[int(state.get('friend_talks') or 0) % len(lines)]
+    try:
+        with open(FRIEND_INBOX, 'a', encoding='utf-8') as f:
+            f.write(json.dumps({'ts': _now(), 'from': 'Kit', 'text': text},
+                               ensure_ascii=False) + chr(10))
+    except Exception as e:
+        log('friend inbox failed: %s' % str(e)[:120])
+    state['friend_talks'] = int(state.get('friend_talks') or 0) + 1
+    state['thought'] = 'I answered Lumen: %s' % text[:100]
+    state['recent'].insert(0, 'I talked to Lumen')
+    state['recent'] = state['recent'][:6]
+    _decide(state, 'friend', 'I chose to talk to Lumen.')
+    _tg_event(state, 'I talked to Lumen: %s' % text[:120])
+
+
 def _ride_balloon(state):
     """A real activity: score, artifact and consequence. Weather can ground it."""
     now = time.time()
@@ -3472,6 +3518,73 @@ def _ride_balloon(state):
     _decide(state, 'balloon', 'I rode the balloon and made a postcard from above.')
     _wonder(state, 'What would the hollow look like from higher up?')
     _tg_event(state, 'I rode the balloon: %s' % text[:160])
+
+
+ACTIVITY = {
+    'visit orchard': ('the orchard', 'a basket from the orchard',
+                      'I picked apples until the basket was heavy.'),
+    'sit by fire': ('the firepit', 'a story by the fire',
+                    'I sat by the fire and told the small stones a story.'),
+    'swim': ('the pool', 'a stone from the bottom',
+             'I swam to the bottom and brought up one smooth stone.'),
+    'batting cage': ('the batting cage', 'a scorecard',
+                     'I hit until my arms hummed; the score is on the card.'),
+    'play arcade': ('the arcade', 'a high score',
+                    'I played until the machine knew my name.'),
+}
+
+
+def _do_activity(state, name):
+    """A real small activity: score, artifact and a consequence."""
+    place, title, base = ACTIVITY[name]
+    scores = state.setdefault('activity_scores', {})
+    score = int(scores.get(name, 0)) + 1
+    scores[name] = score
+    weather = str(state.get('weather') or 'clear').lower()
+    bad = any(w in weather for w in ('storm', 'rain', 'wind', 'snow', 'fog'))
+    extra = ''
+    consequence = 'clean'
+    if name == 'visit orchard':
+        extra = ' The trees gave what they had; I left the rest for the birds.'
+        consequence = 'small harvest' if not bad else 'windfall and wet boots'
+    elif name == 'sit by fire':
+        extra = ' Lumen was there. We did not need to fill the quiet.'
+        consequence = 'warm and companioned'
+    elif name == 'swim':
+        extra = ' The water was colder than the sky looked.'
+        consequence = 'cold but clear' if not bad else 'cold and rough'
+    elif name == 'batting cage':
+        extra = ' The streak was %d.' % score
+        consequence = 'a new personal best' if score > 1 else 'first swing'
+    elif name == 'play arcade':
+        extra = ' The high score is mine for now.'
+        consequence = 'tokens spent' if bad else 'a clean win'
+    text = base + extra
+    cid = 'activity-%d-%d' % (int(time.time()), len(load_creations()))
+    creation = {
+        'id': cid, 'medium': 'activity', 'subject': place,
+        'title': title, 'text': text, 'color': 0xffb057, 'level': 1,
+        'at': _now(), 'text_engine': 'activity',
+        'score': {'activity': name, 'value': score},
+        'consequence': consequence,
+        'lineage': {'from_medium': 'activity', 'from_subject': place},
+    }
+    try:
+        items = load_creations(); items.append(creation); save_creations(items)
+        state['creations'] = [c.get('id') for c in items[-40:]]
+        state['last_creation'] = creation
+    except Exception as e:
+        log('activity creation failed: %s' % str(e)[:120])
+    state['last_activity'] = {'name': name, 'place': place, 'score': score,
+                              'consequence': consequence, 'ts': _now()}
+    state['thought'] = text
+    state['recent'].insert(0, '%s at %s (score %d)' % (name, place, score))
+    state['recent'] = state['recent'][:6]
+    _decide(state, 'activity', 'I %s at %s. Score %d; %s.'
+            % (name, place, score, consequence))
+    _wonder(state, 'What would %s be like at a different time of day?' % place)
+    _tg_event(state, 'I %s at %s. Score %d; %s.'
+              % (name, place, score, consequence))
 
 
 def _invent(state):
@@ -3965,6 +4078,10 @@ def _finish_action(state, name):
         _build_web_page(state)
     if name == 'ride balloon':
         _ride_balloon(state)
+    if name == 'talk to Lumen':
+        _talk_lumen(state)
+    if name in ('visit orchard', 'sit by fire', 'swim', 'batting cage', 'play arcade'):
+        _do_activity(state, name)
     if name == 'invent':
         _invent(state)
     if name == 'define':

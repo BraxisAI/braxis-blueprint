@@ -111,6 +111,8 @@
   <div class="recent" id="resRecent"></div>
   <div class="recent" id="resThoughts" style="opacity:.75"></div>
   <button id="gameBtn">play tic-tac-toe with KIT</button>
+  <button id="cinemaSound">cinema sound</button>
+  <button id="galleryAudio" style="display:none">gallery audio</button>
   <button id="follow">follow Kit</button>
   <button id="share">share this world</button>
   <button id="galleryBtn">KIT's gallery</button>
@@ -929,7 +931,8 @@ function updateRes(){
   el('resCompanionTalk').textContent = _cd ? ('last talk — KIT: ' + String(_cd.kit || '').slice(0, 90) + ' · Juniper: ' + String(_cd.juniper || '').slice(0, 90)) : '';
   if (R.friend && R.friend.name) {
     ensureFriendAvatar(R.friend.name);
-    el('resFriend').textContent = 'friend: ' + R.friend.name + (R.friend.last_words ? ' · "' + String(R.friend.last_words).slice(0,100) + '"' : '');
+    _friendHome = {x: Number(R.friend.x ?? 8), z: Number(R.friend.z ?? 8)};
+    el('resFriend').textContent = (R.friend.stance ? R.friend.stance + ' · ' : '') + R.friend.name + (R.friend.affinity !== undefined ? ' (affinity ' + Number(R.friend.affinity).toFixed(2) + ')' : '') + (R.friend.last_words ? ' — "' + String(R.friend.last_words).slice(0,100) + '"' : '');
   } else { el('resFriend').textContent = ''; }
   el('resFieldNote').textContent = (R.last_field_note && R.last_field_note.topic) ? ('field note: ' + R.last_field_note.topic + ' · ' + String(R.last_field_note.note || '').slice(0, 110)) : '';
   el('resJournal').textContent = R.reflection ? ('diary: ' + R.reflection.slice(0,180)) : '';
@@ -1124,6 +1127,21 @@ function gameReset(){
   gameRender();
   el('gameStatus').textContent = 'you are X. your move.';
 }
+el('cinemaSound').addEventListener('click', ()=>{
+  const v = window._cinemaVideo;
+  if (!v) return;
+  v.muted = !v.muted;
+  if (!v.muted) v.play().catch(()=>{});
+  el('cinemaSound').textContent = v.muted ? 'cinema sound' : 'mute cinema';
+});
+let _gallerySongEl = null;
+el('galleryAudio').addEventListener('click', ()=>{
+  if (!window._kitSong) return;
+  if (!_gallerySongEl) { _gallerySongEl = new Audio(); _gallerySongEl.loop = true; }
+  if (_gallerySongEl.src !== new URL(window._kitSong, location.href).href) _gallerySongEl.src = window._kitSong;
+  if (_gallerySongEl.paused) { _gallerySongEl.play().catch(()=>{}); el('galleryAudio').textContent = 'stop gallery audio'; }
+  else { _gallerySongEl.pause(); el('galleryAudio').textContent = 'gallery audio'; }
+});
 el('gameBtn').addEventListener('click', ()=>{
   el('game').style.display = 'block';
   gameReset();
@@ -1181,12 +1199,13 @@ function ensureFriendAvatar(name){
   _friendAvatarName = name;
   scene.add(_friendAvatar);
 }
+let _friendHome = {x: 8, z: 8};
 function animateFriend(t){
   if (!_friendAvatar) return;
-  const a = t * .45 + 1.7;
-  _friendAvatar.position.set(resident.position.x + Math.cos(a)*2.2,
-    surfaceY(resident.position.x + Math.cos(a)*2.2, resident.position.z + Math.sin(a)*2.2) + .1,
-    resident.position.z + Math.sin(a)*2.2);
+  const a = t * .22;
+  const fx = _friendHome.x + Math.cos(a)*5.5;
+  const fz = _friendHome.z + Math.sin(a)*5.5;
+  _friendAvatar.position.set(fx, surfaceY(fx, fz) + .1, fz);
   _friendAvatar.rotation.y = a + Math.PI/2;
 }
 
@@ -1593,6 +1612,15 @@ function buildMesh(b){
       const tether = cyl(.04,.04,3.2, dark, bx-2.0, 1.6, bz+1.2);
       const flame = new THREE.Mesh(new THREE.SphereGeometry(.28,8,6), glow);
       flame.position.set(bx, 4.2, bz); g.add(flame);
+      // indoor gallery: three framed works on the back wall
+      for (let i=0;i<3;i++) {
+        const gx = -2.5 + i*2.5, gy = 2.7;
+        box(2.1, 1.6, .14, wood, gx, gy, -fd/2 + .25);
+        const hp = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.3),
+          new THREE.MeshBasicMaterial({color:0x1a1a1a}));
+        hp.position.set(gx, gy, -fd/2 + .34); g.add(hp);
+        HOUSE_ART_SLOTS.push(hp);
+      }
       // garden strip
       for (let i=0;i<8;i++) {
         const fx = -fw*.55 + (i%4)*1.2, fz = -fd*.62 + Math.floor(i/4)*1.0;
@@ -1696,11 +1724,26 @@ function buildMesh(b){
       const light = new THREE.PointLight(sc.color || 0xffb057, 5, 12);
       light.position.set(w*.72, h*.70, 0); g.add(light);
     } else if (shape === 'well') {
-      cyl(w*1.2, w*1.4, h*.28, mat, 0, h*.14, 0);
-      cyl(w*.9, w*.9, .08, glow, 0, h*.30, 0);
-      for (const x of [-w*.8, w*.8]) cyl(.12,.14,h*.9,dark,x,h*.45,0);
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(w*1.25,.8,8), new THREE.MeshStandardMaterial({color:0x6b3f2e}));
-      roof.position.y = h*.95; g.add(roof);
+      const stone = new THREE.MeshStandardMaterial({color:0x8f8a7e, roughness:.95});
+      cyl(w*1.5, w*1.65, .32, stone, 0, .16, 0);
+      cyl(w*1.15, w*1.25, .55, stone, 0, .48, 0);
+      const water = new THREE.Mesh(new THREE.CylinderGeometry(w*.92,w*.92,.06,20),
+        new THREE.MeshStandardMaterial({color:0x356f7a, transparent:true, opacity:.8, roughness:.15, metalness:.15}));
+      water.position.y = .70; g.add(water);
+      for (const x of [-w*.78,w*.78]) {
+        box(.18,h*1.15,.18, wood, x, h*.72, 0);
+        box(.30,.14,.30, dark, x, h*1.28, 0);
+      }
+      box(w*1.85,.16,.18, wood, 0, h*1.25, 0);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(w*1.45,1.0,4),
+        new THREE.MeshStandardMaterial({color:0x6b3f2e, roughness:.9}));
+      roof.position.y = h*1.42; roof.rotation.y = Math.PI/4; g.add(roof);
+      cyl(.035,.035,1.0, dark, 0, h*1.1, 0);
+      box(.46,.34,.36, wood, 0, h*.82, 0);
+      for (let i=0;i<5;i++) {
+        const m = new THREE.Mesh(new THREE.DodecahedronGeometry(.10+Math.random()*.10,0), green);
+        m.position.set(-w + Math.random()*w*2, .35+Math.random()*.2, -w*.6+Math.random()*w*1.2); g.add(m);
+      }
     } else if (shape === 'gate') {
       for (const x of [-w*1.3, w*1.3]) { box(.35,h*.9,.35, mat, x,h*.45,0); box(.5,.2,.5,dark,x,h*.95,0); }
       box(w*3,.28,.38, mat, 0,h*.92,0);
@@ -1820,6 +1863,7 @@ function buildCinema(){
     bx(1.5,.8,.15, wood, -6.0 + i*2.0, 1.2, 4.0 + r*2.0);
   }
   const v = document.createElement('video');
+  window._cinemaVideo = v;
   v.src = '/media/world/live_20261101T184401Z.mp4';
   v.crossOrigin = 'anonymous'; v.muted = true; v.loop = true; v.playsInline = true;
   v.style.position='fixed'; v.style.left='-9999px'; v.style.width='1px';
@@ -1837,7 +1881,7 @@ buildCinema();
 
 // KIT's art, in the world. A pair of outdoor gallery walls uses the real
 // image creations, so walking the hollow shows what KIT painted.
-let ART_GROUP = null, ART_SLOTS = [];
+let ART_GROUP = null, ART_SLOTS = [], HOUSE_ART_SLOTS = [];
 let POEM_BOARD = null;
 function poemTexture(text){
   const c=document.createElement('canvas'); c.width=1024; c.height=768;
@@ -1907,6 +1951,20 @@ function updateArtWalls(list){
       slot.material.needsUpdate = true; slot.visible = true;
     }, undefined, () => { slot.visible = false; });
   });
+  const houseImgs = (list || []).filter(c => c.image_url).slice(-3).reverse();
+  HOUSE_ART_SLOTS.forEach((slot, i) => {
+    const c = houseImgs[i];
+    if (!c) { slot.visible = false; return; }
+    _artLoader.load(c.image_url, tex => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      slot.material.map = tex; slot.material.color.set(0xffffff);
+      slot.material.needsUpdate = true; slot.visible = true;
+    }, undefined, () => { slot.visible = false; });
+  });
+  const song = (list || []).filter(c => c.audio_url).slice(-1)[0];
+  window._kitSong = song ? song.audio_url : '';
+  const ga = document.getElementById('galleryAudio');
+  if (ga && !_videoMode) ga.style.display = song ? 'block' : 'none';
   const poem = (list || []).filter(c => c.text && c.medium !== 'code').slice(-1)[0];
   if (POEM_BOARD && poem) {
     const tex = poemTexture(poem.text);
@@ -1987,20 +2045,20 @@ if (_videoMode) {
   // A world clip is for strangers, not a screen tour. Remove every panel and
   // put the camera in a slow three-quarter orbit around KIT and the hollow.
   for (const id of ['offer', 'note', 'toast', 'hud', 'res', 'talk',
-                    'wideBtn', 'resToggle', 'game']) {
+                    'wideBtn', 'resToggle', 'game', 'gameBtn', 'galleryBtn',
+                    'wishesBtn', 'journalBtn', 'notebookBtn', 'dashBtn',
+                    'follow', 'share', 'cinemaSound', 'galleryAudio',
+                    'gallery', 'wishes']) {
     const e = document.getElementById(id);
     if (e) e.style.display = 'none';
   }
   for (const l of LABELS) l.visible = false;
   _follow = true;
   controls.autoRotate = true;
-  controls.autoRotateSpeed = 1.6;
+  controls.autoRotateSpeed = 1.1;
   controls.target.set(resident.position.x, resident.position.y + 2, resident.position.z);
-  camera.position.set(resident.position.x + 16, resident.position.y + 10, resident.position.z + 16);
+  camera.position.set(resident.position.x + 22, resident.position.y + 12, resident.position.z + 22);
   _ring.visible = false;
-  setTimeout(() => scene.traverse(o => {
-    if (o.isMesh && o.geometry && o.geometry.type === 'TorusGeometry') o.visible = false;
-  }), 2500);
   controls.update();
 }
 

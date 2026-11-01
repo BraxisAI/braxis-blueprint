@@ -87,7 +87,10 @@ def main():
     aff = float(st.get("affinity") or 0.0)
     if new:
         aff = min(1.0, aff + 0.16 * len(new))
-        st["last_kit_words"] = new[-1][:240]
+        try:
+            st["last_kit_words"] = str(json.loads(new[-1]).get("text") or "")[:240]
+        except Exception:
+            st["last_kit_words"] = new[-1][:240]
     else:
         aff = max(0.0, aff - 0.01)
     st["inbox_cursor"] = len(lines)

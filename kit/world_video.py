@@ -118,16 +118,60 @@ def capture():
     return out
 
 
+def _story_caption(state):
+    """A Pino-style episode caption: day number, one concrete beat, invitation.
+    Facts only; the model may phrase, not invent."""
+    world = state.get('world_name') or 'Glowveil Hollow'
+    action = state.get('action') or 'living'
+    project = (state.get('project') or {}).get('name') or 'between projects'
+    last = state.get('last_creation') or {}
+    last_build = state.get('last_build') or {}
+    comp = state.get('companion') or {}
+    thought = str(state.get('thought') or '')[:160]
+    day = 1
+    try:
+        born = dt.datetime.fromisoformat(str(state.get('born')))
+        if born.tzinfo is None:
+            born = born.replace(tzinfo=dt.timezone.utc)
+        day = max(1, (dt.datetime.now(dt.timezone.utc) - born).days + 1)
+    except Exception:
+        pass
+    facts = ("Day %d in %s. KIT is %s. Project: %s. Latest creation: %s. "
+             "Latest build: %s. Companion: %s the %s. Thought: %s"
+             % (day, world, action, project,
+                last.get('title') or last.get('medium') or 'none',
+                last_build.get('name') or 'none',
+                comp.get('name') or 'none', comp.get('kind') or 'companion',
+                thought or 'none'))
+    fallback = ("Day %d in %s: KIT is %s. The hollow is live at "
+                "braxisai.com/world — leave a stone, a flower, or a song and "
+                "KIT will find it." % (day, world, action))
+    try:
+        from shared.llm_router import call_llm
+        prompt = (
+            "Write ONE TikTok/Shorts caption for a 15-second vertical clip of a "
+            "living 3D world. Narrator is the maker, not the robot. Use ONLY the "
+            "facts below; do not invent numbers, visitors, events, or claims. "
+            "First line is a hook with the day number and one concrete thing KIT "
+            "did. Then one short human detail. End with one invitation to visit "
+            "braxisai.com/world and leave a stone, flower, or song. Plain text, "
+            "no hashtags, max 260 characters." + (chr(10) * 2) + "FACTS: " + facts)
+        r = call_llm(prompt, task='writing', max_tokens=180, temperature=.7)
+        text = str((r or {}).get('content') or '').strip()
+        text = text.replace('**', '').strip()
+        if len(text) >= 40 and 'braxisai.com/world' in text:
+            return text[:320]
+    except Exception:
+        pass
+    return fallback
+
+
 def queue(video_url, state, with_audio=False):
     from shared.determiner import route
     world = state.get('world_name') or 'the world'
     action = state.get('action') or 'living'
     thought = state.get('thought') or ''
-    hook = 'Live from %s, %s UTC.' % (
-        world, dt.datetime.now(dt.timezone.utc).strftime('%H:%M UTC'))
-    cap = hook + (chr(10) * 2) + (
-        'A 15-second window into %s. KIT is %s. %s The world is live: %s'
-        % (world, action, thought[:180], WORLD))
+    cap = _story_caption(state)
     if with_audio:
         cap += ' With KIT’s own song.'
     title = ('Live from %s' % world)[:110]

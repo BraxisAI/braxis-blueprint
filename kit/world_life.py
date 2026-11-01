@@ -66,6 +66,7 @@ SKILL_LIB = os.path.join(B, 'data', 'world', 'kit_skill_library.json')
 MAIL_OUT = os.path.join(B, 'data', 'world', 'kit_mailbox.jsonl')
 MAIL_IN = os.path.join(B, 'data', 'world', 'trio_replies.jsonl')
 FRIEND_INBOX = os.path.join(B, 'data', 'world', 'kit_friend_inbox.jsonl')
+PHONE_QUEUE = os.path.join(B, 'data', 'world', 'phone_tasks.json')
 BUILD_REQ = os.path.join(B, 'data', 'world', 'kit_build_requests.jsonl')
 LOG_PATH = os.path.join(B, 'logs', 'world_life.log')
 PORT = 8130
@@ -148,6 +149,7 @@ ACTIONS = {
     'befriend':       ('plaza',        {'social': 1.8, 'comfort': .5, 'curiosity': .3, 'energy': -.2}, .97),
     'talk to companion': ('plaza',      {'social': 1.4, 'comfort': .5, 'energy': -.1}, .92),
     'talk to Lumen':  ('plaza',        {'social': 1.2, 'comfort': .5, 'curiosity': .3}, .62),
+    'look through phone': ('lookout',  {'curiosity': 1.4, 'social': .4, 'comfort': .2}, .72),
     'post':           ('library',      {'social': 1.1, 'mastery': .4, 'curiosity': .2, 'energy': -.1}, .78),
     'build a web page': ('library',    {'mastery': 1.1, 'curiosity': .9, 'social': .2, 'energy': -.3}, .55),
     'sketch':         ('library',      {'curiosity': .8, 'mastery': .6, 'energy': -.2}, .82),
@@ -3534,6 +3536,77 @@ ACTIVITY = {
 }
 
 
+def _look_phone(state):
+    """KIT borrows the spare phone's camera for a moment of real-world sight."""
+    last = float(state.get('last_phone_ts') or 0)
+    if time.time() - last < 45 * 60:
+        state['thought'] = 'The phone eye is resting. I can look again later.'
+        return
+    try:
+        import sys as _sys
+        _sys.path.insert(0, os.path.join(B, 'weapons'))
+        import phone_task
+        # Screen first: KIT can see what the phone is showing without opening
+        # the camera. An explicit photo task still uses the camera path.
+        tid = phone_task.enqueue(
+            'Capture the phone screen', source='kit', kind='screen')
+    except Exception as e:
+        state['thought'] = 'I reached for the phone eye, but it did not answer.'
+        log('phone enqueue failed: %s' % str(e)[:160])
+        return
+    state['phone_pending'] = str(tid)
+    state['last_phone_ts'] = time.time()
+    state['thought'] = ('I asked the phone to show me its screen. The picture '
+                        'will come back to the hollow when it is ready.')
+    state['recent'].insert(0, 'asked the phone to look outside')
+    state['recent'] = state['recent'][:6]
+    _decide(state, 'phone', 'I asked the phone to open its eye.')
+    _tg_event(state, 'I asked the phone to look outside. Task %s.' % tid)
+
+
+def _check_phone_eyes(state):
+    """Turn a finished phone photo into a real KIT creation in the hollow."""
+    tid = state.get('phone_pending')
+    if not tid:
+        return
+    try:
+        with open(PHONE_QUEUE, encoding='utf-8') as f:
+            d = json.load(f)
+        task = next((t for t in (d.get('tasks') or [])
+                     if str(t.get('id')) == str(tid)), None)
+    except Exception:
+        return
+    if not task:
+        return
+    if task.get('status') not in ('done', 'error'):
+        return
+    state['phone_pending'] = None
+    if task.get('status') == 'done' and task.get('image_url'):
+        cid = 'phone-%d-%d' % (int(time.time()), len(load_creations()))
+        creation = {
+            'id': cid, 'medium': 'photo', 'subject': 'the world outside the phone',
+            'title': 'what the phone saw', 'image_url': task['image_url'],
+            'text': str(task.get('result') or 'The phone opened its eye.'),
+            'color': 0x7dd3a8, 'level': 1, 'at': _now(),
+            'text_engine': 'phone',
+            'lineage': {'from_medium': 'phone_eye', 'from_subject': 'the real world'},
+        }
+        try:
+            items = load_creations(); items.append(creation); save_creations(items)
+            state['creations'] = [c.get('id') for c in items[-40:]]
+            state['last_creation'] = creation
+        except Exception as e:
+            log('phone creation failed: %s' % str(e)[:120])
+        state['thought'] = 'The phone opened its eye. I can see a little of the real world now.'
+        state['recent'].insert(0, 'the phone showed me the outside')
+        state['recent'] = state['recent'][:6]
+        _decide(state, 'phone', 'The phone showed me what is outside the hollow.')
+        _tg_event(state, 'The phone opened its eye; I added the picture to my gallery.')
+    else:
+        state['thought'] = 'The phone eye came back empty. I will try again later.'
+        log('phone eye task %s ended %s' % (tid, task.get('status')))
+
+
 def _do_activity(state, name):
     """A real small activity: score, artifact and a consequence."""
     place, title, base = ACTIVITY[name]
@@ -4080,6 +4153,8 @@ def _finish_action(state, name):
         _ride_balloon(state)
     if name == 'talk to Lumen':
         _talk_lumen(state)
+    if name == 'look through phone':
+        _look_phone(state)
     if name in ('visit orchard', 'sit by fire', 'swim', 'batting cage', 'play arcade'):
         _do_activity(state, name)
     if name == 'invent':
@@ -5425,6 +5500,7 @@ def main():
             with LOCK:
                 state = load_state()
                 tick(state)
+                _check_phone_eyes(state)
                 save_state(state)
             # the one LLM call happens outside the lock so the page never
             # waits on a model; it exits immediately unless a day is due

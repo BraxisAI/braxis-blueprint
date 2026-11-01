@@ -2056,15 +2056,19 @@ if (_videoMode) {
 addEventListener('resize', ()=>{ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
 const composer = new EffectComposer(renderer);
 let n8ao = null;
-try {
-  const _n8 = await import('https://cdn.jsdelivr.net/npm/n8ao@2.0.1/dist/N8AO.js');
-  if (_n8 && _n8.N8AOPass) {
-    n8ao = new _n8.N8AOPass(scene, camera, innerWidth, innerHeight);
-    n8ao.setQualityMode('Medium');
-    n8ao.configuration.halfRes = true;
-    composer.addPass(n8ao);
-  }
-} catch(e) { console.warn('N8AO unavailable, using plain render', e); }
+// N8AO is opt-in (?ao=1): its D3D shader emits a wall of X3595 gradient-in-loop
+// warnings and the frame cost triggers Chrome's requestAnimationFrame violation.
+if (_params.get('ao') === '1') {
+  try {
+    const _n8 = await import('https://cdn.jsdelivr.net/npm/n8ao@2.0.1/dist/N8AO.js');
+    if (_n8 && _n8.N8AOPass) {
+      n8ao = new _n8.N8AOPass(scene, camera, innerWidth, innerHeight);
+      n8ao.setQualityMode('Medium');
+      n8ao.configuration.halfRes = true;
+      composer.addPass(n8ao);
+    }
+  } catch(e) { console.warn('N8AO unavailable, using plain render', e); }
+}
 if (!n8ao) composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.62, 0.86));
 let bokehPass = null;

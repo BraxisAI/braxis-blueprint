@@ -150,6 +150,7 @@ ACTIONS = {
     'talk to companion': ('plaza',      {'social': 1.4, 'comfort': .5, 'energy': -.1}, .92),
     'talk to Lumen':  ('plaza',        {'social': 1.2, 'comfort': .5, 'curiosity': .3}, .62),
     'look through phone': ('lookout',  {'curiosity': 1.4, 'social': .4, 'comfort': .2}, .72),
+    'look outside':    ('lookout',      {'curiosity': 1.5, 'comfort': .2}, .66),
     'post':           ('library',      {'social': 1.1, 'mastery': .4, 'curiosity': .2, 'energy': -.1}, .78),
     'build a web page': ('library',    {'mastery': 1.1, 'curiosity': .9, 'social': .2, 'energy': -.3}, .55),
     'sketch':         ('library',      {'curiosity': .8, 'mastery': .6, 'energy': -.2}, .82),
@@ -3536,7 +3537,7 @@ ACTIVITY = {
 }
 
 
-def _look_phone(state):
+def _look_phone(state, kind='screen'):
     """KIT borrows the spare phone's camera for a moment of real-world sight."""
     last = float(state.get('last_phone_ts') or 0)
     if time.time() - last < 45 * 60:
@@ -3546,17 +3547,19 @@ def _look_phone(state):
         import sys as _sys
         _sys.path.insert(0, os.path.join(B, 'weapons'))
         import phone_task
-        # Screen first: KIT can see what the phone is showing without opening
-        # the camera. An explicit photo task still uses the camera path.
-        tid = phone_task.enqueue(
-            'Capture the phone screen', source='kit', kind='screen')
+        goal = ('Look at the 3D world through the phone camera'
+                if kind == 'photo' else 'Capture the phone screen')
+        tid = phone_task.enqueue(goal, source='kit', kind=kind)
     except Exception as e:
         state['thought'] = 'I reached for the phone eye, but it did not answer.'
         log('phone enqueue failed: %s' % str(e)[:160])
         return
     state['phone_pending'] = str(tid)
     state['last_phone_ts'] = time.time()
-    state['thought'] = ('I asked the phone to show me its screen. The picture '
+    state['thought'] = ('I asked the phone to look outside. The picture will '
+                        'come back to the hollow when it is ready.'
+                        if kind == 'photo' else
+                        'I asked the phone to show me its screen. The picture '
                         'will come back to the hollow when it is ready.')
     state['recent'].insert(0, 'asked the phone to look outside')
     state['recent'] = state['recent'][:6]
@@ -4155,6 +4158,8 @@ def _finish_action(state, name):
         _talk_lumen(state)
     if name == 'look through phone':
         _look_phone(state)
+    if name == 'look outside':
+        _look_phone(state, kind='photo')
     if name in ('visit orchard', 'sit by fire', 'swim', 'batting cage', 'play arcade'):
         _do_activity(state, name)
     if name == 'invent':

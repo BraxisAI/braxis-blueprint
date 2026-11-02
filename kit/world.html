@@ -1221,10 +1221,14 @@ function animateResident(){
     // KIT is staged at the shot's subject; the live world is untouched.
     const _shots = {
       plaza:   {x: 0,   z: 0,   tx: 0,   tz: 0,   r: 28, y: 14, ty: 4},
-      home:    {x: 110, z: -80, tx: 110, tz: -90, r: 24, y: 12, ty: 5},
+      home:    {x: 110, z: -78, tx: 110, tz: -90, r: 38, y: 22, ty: 6},
       gallery: {x: 22,  z: 36,  tx: 22,  tz: 22,  r: 22, y: 10, ty: 4},
       cinema:  {x: 0,   z: 60,  tx: 0,   tz: 46,  r: 22, y: 10, ty: 6},
-      orchard: {x: -70, z: 125, tx: -70, tz: 115, r: 24, y: 12, ty: 4}
+      orchard: {x: -70, z: 125, tx: -70, tz: 115, r: 24, y: 12, ty: 4},
+      bridge:  {x: 145, z: 176, tx: 145, tz: 176, r: 22, y: 12, ty: 4},
+      market:  {x: 0, z: -18, tx: 0, tz: -24, r: 20, y: 10, ty: 4},
+      observatory: {x: 0, z: 18, tx: 0, tz: 24, r: 20, y: 10, ty: 4},
+      river:   {x: -95, z: -45, tx: -95, tz: -55, r: 20, y: 10, ty: 4}
     };
     const _s = _shots[_params.get('shot') || 'plaza'] || _shots.plaza;
     resident.position.set(_s.x, surfaceY(_s.x, _s.z), _s.z);

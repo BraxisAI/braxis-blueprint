@@ -153,7 +153,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -2072,7 +2072,7 @@ if (_params.get('ao') === '1') {
 if (!n8ao) composer.addPass(new RenderPass(scene, camera));
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.62, 0.86));
 let bokehPass = null;
-if (!new URLSearchParams(location.search).get('quality')) {
+if (new URLSearchParams(location.search).get('dof') === '1') {
   try {
     bokehPass = new BokehPass(scene, camera, {focus: 55, aperture: 0.00002, maxblur: 0.0025});
     composer.addPass(bokehPass);

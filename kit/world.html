@@ -1216,25 +1216,26 @@ function animateResident(){
   } else {
     companionGroup.visible = false;
   }
-  if (_videoMode && R.home && Number.isFinite(+R.home.x)) {
-    // Frame the tour at KIT's own house, on the porch side, not inside the
-    // walls and not among the city towers.
-    const hx = +R.home.x, hz = +R.home.z + 8.0;
-    resident.position.set(hx, surfaceY(hx, hz), hz);
-  }
   if (_videoMode) {
-    // A limited south-side orbit: motion for the critic, but never behind the
-    // house where the walls hide KIT.
+    // Each ?shot= is a short, different camera setup for a real montage.
+    // KIT is staged at the shot's subject; the live world is untouched.
+    const _shots = {
+      plaza:   {x: 0,   z: 0,   tx: 0,   tz: 0,   r: 28, y: 14, ty: 4},
+      home:    {x: 110, z: -80, tx: 110, tz: -90, r: 24, y: 12, ty: 5},
+      gallery: {x: 22,  z: 36,  tx: 22,  tz: 22,  r: 22, y: 10, ty: 4},
+      cinema:  {x: 0,   z: 60,  tx: 0,   tz: 46,  r: 22, y: 10, ty: 6},
+      orchard: {x: -70, z: 125, tx: -70, tz: 115, r: 24, y: 12, ty: 4}
+    };
+    const _s = _shots[_params.get('shot') || 'plaza'] || _shots.plaza;
+    resident.position.set(_s.x, surfaceY(_s.x, _s.z), _s.z);
     const _t = performance.now() / 1000;
-    const _a = Math.sin(_t * .10) * .55;
-    const _r = 48, _y = 26;
+    const _a = Math.sin(_t * .14) * .75;
     camera.position.set(
-      resident.position.x + Math.sin(_a) * _r,
-      resident.position.y + _y,
-      resident.position.z + Math.cos(_a) * _r
+      _s.tx + Math.sin(_a) * _s.r,
+      surfaceY(_s.x, _s.z) + _s.y,
+      _s.tz + Math.cos(_a) * _s.r
     );
-    controls.target.set(resident.position.x, resident.position.y + 1.6,
-                        resident.position.z);
+    controls.target.set(_s.tx, _s.ty, _s.tz);
     camera.lookAt(controls.target);
   }
   if (_follow) {
@@ -2050,6 +2051,11 @@ if (_videoMode) {
   controls.target.set(resident.position.x, resident.position.y + 2, resident.position.z);
   camera.position.set(resident.position.x + 22, resident.position.y + 12, resident.position.z + 22);
   _ring.visible = false;
+  // Video capture is a clean, smooth shot: shadows and retina scaling are
+  // the two costs that made the headless captures look choppy.
+  renderer.shadowMap.enabled = false;
+  renderer.setPixelRatio(0.8);
+  renderer.setSize(innerWidth, innerHeight);
   controls.update();
 }
 
@@ -2070,7 +2076,8 @@ if (_params.get('ao') === '1') {
   } catch(e) { console.warn('N8AO unavailable, using plain render', e); }
 }
 if (!n8ao) composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.62, 0.86));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.32, 0.62, 0.86);
+composer.addPass(bloomPass);
 let bokehPass = null;
 if (new URLSearchParams(location.search).get('dof') === '1') {
   try {
@@ -2111,6 +2118,7 @@ const DitherShader = {
 };
 const ditherPass = new ShaderPass(DitherShader);
 composer.addPass(ditherPass);
+if (_videoMode) { bloomPass.enabled = false; ditherPass.enabled = false; }
 addEventListener('resize', () => {
   ditherPass.uniforms.resolution.value.set(innerWidth, innerHeight);
 });

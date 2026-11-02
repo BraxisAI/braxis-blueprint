@@ -3584,6 +3584,15 @@ def _check_phone_eyes(state):
     if task.get('status') not in ('done', 'error'):
         return
     state['phone_pending'] = None
+    if task.get('status') == 'done' and task.get('private_path'):
+        state['phone_portrait'] = str(task.get('private_path'))
+        state['thought'] = ('A visitor let me see them. I will keep that '
+                            'picture to myself.')
+        state['recent'].insert(0, 'a visitor let me look at them')
+        state['recent'] = state['recent'][:6]
+        _decide(state, 'phone', 'A visitor let me see them through the phone.')
+        _tg_event(state, 'A visitor let me see them through the phone.')
+        return
     if task.get('status') == 'done' and task.get('image_url'):
         cid = 'phone-%d-%d' % (int(time.time()), len(load_creations()))
         creation = {

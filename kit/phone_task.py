@@ -87,7 +87,8 @@ def enqueue(goal, source="empire", kind="task"):
         task = {"id": tid, "goal": goal, "source": str(source or "empire")[:80],
                 "kind": str(kind or "task")[:20], "status": "pending",
                 "created": _now(), "started": None, "finished": None,
-                "worker": None, "result": None, "log": None, "image_url": None}
+                "worker": None, "result": None, "log": None,
+                "image_url": None, "private_path": None}
         d["tasks"].append(task)
         _save(d)
     print(tid)
@@ -107,11 +108,11 @@ def claim(worker="pc"):
     return 0
 
 
-def complete(task_id, status, result, log, image_url=None):
+def complete(task_id, status, result, log, image_url=None, private_path=None):
     status = "done" if str(status).lower() in ("done", "ok", "success") else "error"
     payload = {"status": status, "result": str(result or "")[:4000],
                "log": str(log or "")[:2000], "finished": _now(),
-               "image_url": image_url}
+               "image_url": image_url, "private_path": private_path}
     with _locked() as lock:
         d = _load()
         for task in d["tasks"]:
@@ -151,7 +152,7 @@ def main():
         payload = json.load(sys.stdin)
         return complete(payload.get("id"), payload.get("status", "error"),
                         payload.get("result"), payload.get("log"),
-                        payload.get("image_url"))
+                        payload.get("image_url"), payload.get("private_path"))
     if a.status:
         return status()
     ap.print_help()

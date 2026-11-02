@@ -91,7 +91,7 @@ def enqueue(goal, source="empire", kind="task"):
         d["tasks"].append(task)
         _save(d)
     print(tid)
-    return 0
+    return int(tid)
 
 
 def claim(worker="pc"):

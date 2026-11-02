@@ -101,9 +101,9 @@ def _publish(out, state, a):
         from shared.visual_critic import critique_video
         vc = critique_video(out, context=(
             "A horizontal narrated tour of Glowveil Hollow, a stylized 3D world. "
-            "Show the house, pool, grounds and surrounding hollow. KIT the white "
-            "robot or Juniper may appear. Reject UI overlays, loading screens, "
-            "black bars, or a fully static clip."))
+            "Show KIT the white robot and the river, trees and buildings of the "
+            "hollow. Reject UI overlays, loading screens, black bars, or a fully "
+            "static clip."))
         print("critic", vc.get("score"), vc.get("ok"), vc.get("notes"))
         if not vc.get("ok"):
             print("rejected; not uploaded"); return 1
